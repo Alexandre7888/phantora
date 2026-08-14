@@ -1,0 +1,136 @@
+/* global.css */
+:root {
+    /* Modo Claro (Padrão) */
+    --bg-color: #fdfbf7; /* Cor de papel */
+    --text-color: #2a2a2a; /* Tinta preta */
+    --border-color: #2a2a2a;
+    --accent-color: #667eea;
+    --shadow-color: rgba(42, 42, 42, 0.2);
+    
+    /* Estilo Desenhado (Hand-drawn) */
+    --drawn-border: 2px solid var(--border-color);
+    --drawn-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+    --drawn-radius-alt: 15px 225px 15px 255px/255px 15px 225px 15px;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        /* Modo Escuro */
+        --bg-color: #121218; /* Quadro negro / Fundo escuro */
+        --text-color: #f0f0f5; /* Giz / Tinta branca */
+        --border-color: #e0e0e5;
+        --accent-color: #a78bfa;
+        --shadow-color: rgba(240, 240, 245, 0.15);
+    }
+}
+
+html, body, #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overscroll-behavior-y: none;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    
+    /* Padrão de fundo estilo caderno pontilhado (sutil) */
+    background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-position: 0 0;
+}
+
+/* Suaviza o fundo pontilhado */
+body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg-color);
+    opacity: 0.92;
+    z-index: -1;
+    pointer-events: none;
+    transition: background-color 0.3s ease;
+}
+
+/* Classes utilitárias para estilo desenhado (podem ser aplicadas nos componentes) */
+.drawn-box {
+    background-color: var(--bg-color);
+    border: var(--drawn-border);
+    border-radius: var(--drawn-radius);
+    box-shadow: 4px 4px 0px var(--shadow-color);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.drawn-box:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0px var(--shadow-color);
+}
+
+.drawn-box-alt {
+    background-color: var(--bg-color);
+    border: var(--drawn-border);
+    border-radius: var(--drawn-radius-alt);
+    box-shadow: -4px 4px 0px var(--shadow-color);
+}
+
+.drawn-input {
+    background-color: transparent;
+    border: 2px solid var(--border-color);
+    border-radius: 8px 255px 15px 25px / 255px 10px 225px 15px;
+    color: var(--text-color);
+    padding: 0.5rem 1rem;
+    outline: none;
+}
+
+.drawn-input:focus {
+    border-color: var(--accent-color);
+}
+
+.drawn-button {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border: 2px solid var(--border-color);
+    border-radius: var(--drawn-radius);
+    padding: 0.5rem 1.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 3px 3px 0px var(--border-color);
+    transition: all 0.1s ease;
+}
+
+.drawn-button:active {
+    transform: translate(3px, 3px);
+    box-shadow: 0px 0px 0px var(--border-color);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 10px;
+    border: 2px solid var(--bg-color);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-color);
+}
+
+/* Glass panel adaptado para combinar com o fundo */
+.glass-panel {
+    background: rgba(var(--bg-color), 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: var(--drawn-border);
+    border-radius: var(--drawn-radius);
+}

@@ -92,217 +92,237 @@ function App() {
         }
 
         const params = new URLSearchParams(window.location.search);
-        let userKey = params.get("userKey");
         let tvAuthId = params.get("tvAuthId");
-        const savedKey = localStorage.getItem("userkey");
+        let deviceIdUrl = params.get("deviceId");
+        let authIdToApprove = tvAuthId || deviceIdUrl;
 
-        if (tvAuthId) {
-            setPendingTvAuth(tvAuthId);
-            // Remove from URL
+        if (authIdToApprove) {
+            setPendingTvAuth(authIdToApprove);
             window.history.replaceState({}, document.title, window.location.pathname);
         }
 
-        if (userKey) {
-          localStorage.setItem("userkey", userKey);
-          // Remove userKey from URL
-          window.history.replaceState({}, document.title, window.location.pathname);
-        } else if (savedKey) {
-          userKey = savedKey;
-        }
-
-        if (!userKey) {
-          setAppState('login');
-          return;
-        }
-
-        // Fetch user data from CodeHUB
-        const codeHubData = await api.getCodeHubUser(userKey);
-        if (!codeHubData || codeHubData.erro) {
-          localStorage.removeItem("userkey");
-          setAppState('login');
-          return;
-        }
-
-        // --- VERIFICAÇÃO DE BANIMENTO ---
-        if (window.firebaseDB) {
-           const banSnap = await window.firebaseDB.ref(`banned_users/${codeHubData.uid || userKey}`).once('value');
-           const banData = banSnap.val();
-           if (banData) {
-              // Verifica se é um banimento temporário e já expirou
-              if (banData.banUntil && Date.now() > banData.banUntil) {
-                 // Auto-desbanir
-                 if (banData.backup) {
-                    const jsonString = decodeURIComponent(escape(atob(banData.backup)));
-                    const userData = JSON.parse(jsonString);
-                    await window.firebaseDB.ref(`users/${codeHubData.uid || userKey}`).set(userData);
-                 }
-                 await window.firebaseDB.ref(`banned_users/${codeHubData.uid || userKey}`).remove();
-                 // Seguir o fluxo normal
-              } else {
-                 // Redirecionar para página de apelação
-                 window.location.href = `appeal.html?uid=${codeHubData.uid || userKey}`;
-                 return;
-              }
-           }
-        }
-
-        // Check Firebase for existing profile
-        const firebaseData = await api.getFirebaseUser(codeHubData.uid || userKey);
-        
-        const combinedData = {
-          ...codeHubData,
-          userKey: userKey,
-          profilePicture: firebaseData?.profilePicture || null
+        const getCookie = (name) => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
         };
-        
-        setUserData(combinedData);
-        window.currentUserData = combinedData;
-        
-        if (window.SyncManager) {
-            window.appSyncManager = new window.SyncManager(combinedData.uid || combinedData.userKey, 'mobile', null);
+
+        if (!window.firebaseAuth) {
+            console.error("Firebase Auth not initialized");
+            setAppState('login');
+            return;
         }
 
-        if (!firebaseData || !firebaseData.profilePicture) {
-          setAppState('profile_setup');
-        } else {
-          // Solicitação automática de localização removida para não incomodar os usuários
+        // Listen to Auth State
+        window.firebaseAuth.onAuthStateChanged(async (user) => {
+            if (user) {
+                // User is authenticated
+                const uid = user.uid;
+                
+                // --- VERIFICAÇÃO DE BANIMENTO ---
+                if (window.firebaseDB) {
+                   const banSnap = await window.firebaseDB.ref(`banned_users/${uid}`).once('value');
+                   const banData = banSnap.val();
+                   if (banData) {
+                      if (banData.banUntil && Date.now() > banData.banUntil) {
+                         if (banData.backup) {
+                            const jsonString = decodeURIComponent(escape(atob(banData.backup)));
+                            const uData = JSON.parse(jsonString);
+                            await window.firebaseDB.ref(`users/${uid}`).set(uData);
+                         }
+                         await window.firebaseDB.ref(`banned_users/${uid}`).remove();
+                      } else {
+                         window.location.href = `appeal.html?uid=${uid}`;
+                         return;
+                      }
+                   }
+                }
 
-          // Register OneSignal Listener if logged in
-          if (window.OneSignalDeferred) {
-            window.OneSignalDeferred.push(async function(OneSignal) {
-              try {
-                if (OneSignal.User && OneSignal.User.PushSubscription) {
-                  // Check current subscription status immediately
-                  const currentSub = OneSignal.User.PushSubscription;
-                  if (currentSub && currentSub.optedIn && currentSub.id) {
-                    if (window.firebaseDB) {
-                      await window.firebaseDB.ref(`users/${combinedData.uid || combinedData.userKey}`).update({
-                        oneSignalId: currentSub.id,
-                        username: firebaseData.username || combinedData.nome
-                      });
-                    }
-                  }
+                let firebaseData = await api.getFirebaseUser(uid);
+                
+                const combinedData = {
+                  uid: uid,
+                  privateId: uid,
+                  publicId: uid,
+                  email: user.email,
+                  nome: firebaseData?.name || firebaseData?.username || user.displayName || 'Usuário',
+                  profilePicture: firebaseData?.profilePicture || null
+                };
 
-                  // Listen for future changes
-                  OneSignal.User.PushSubscription.addEventListener("change", async (event) => {
-                    try {
-                      if (event.current && event.current.optedIn) {
-                        const pushId = OneSignal.User.PushSubscription.id;
-                        if (pushId && window.firebaseDB) {
-                          await window.firebaseDB.ref(`users/${combinedData.uid || combinedData.userKey}`).update({
-                            oneSignalId: pushId,
-                            username: firebaseData.username || combinedData.nome
+                setUserData(combinedData);
+                window.currentUserData = combinedData;
+                
+                localStorage.setItem('token_user_id', uid);
+                if (combinedData.nome) {
+                    localStorage.setItem('userName', combinedData.nome);
+                }
+                
+                if (window.SyncManager) {
+                    window.appSyncManager = new window.SyncManager(uid, 'mobile', null);
+                }
+
+                if (!firebaseData || !firebaseData.profilePicture) {
+                  setAppState('profile_setup');
+                } else {
+                  // Register OneSignal Listener if logged in
+                  if (window.OneSignalDeferred) {
+                    window.OneSignalDeferred.push(async function(OneSignal) {
+                      try {
+                        if (OneSignal.User && OneSignal.User.PushSubscription) {
+                          const currentSub = OneSignal.User.PushSubscription;
+                          if (currentSub && currentSub.optedIn && currentSub.id) {
+                            if (window.firebaseDB) {
+                              await window.firebaseDB.ref(`users/${uid}`).update({
+                                oneSignalId: currentSub.id,
+                                username: firebaseData.username || combinedData.nome
+                              });
+                            }
+                          }
+                          OneSignal.User.PushSubscription.addEventListener("change", async (event) => {
+                            try {
+                              if (event.current && event.current.optedIn) {
+                                const pushId = OneSignal.User.PushSubscription.id;
+                                if (pushId && window.firebaseDB) {
+                                  await window.firebaseDB.ref(`users/${uid}`).update({
+                                    oneSignalId: pushId,
+                                    username: firebaseData.username || combinedData.nome
+                                  });
+                                }
+                              }
+                            } catch (err) {
+                              console.warn("OneSignal change event error:", err);
+                            }
                           });
                         }
+                      } catch (err) {
+                        console.warn("OneSignal push subscription logic error:", err);
                       }
-                    } catch (err) {
-                      console.warn("OneSignal change event error:", err);
-                    }
-                  });
-                }
-              } catch (err) {
-                console.warn("OneSignal push subscription logic error:", err);
-              }
-            });
-          }
-          // Handle Invites
-          const joinGroup = params.get("joinGroup");
-          const joinComm = params.get("joinComm");
-          const addUser = params.get("addUser");
-          const msg = params.get("msg");
-          const msguser = params.get("msguser");
+                    });
+                  }
 
-          if (msg && !msguser) {
-              localStorage.setItem("pending_forward_msg", msg);
-          }
-          
-          if (msguser && msg && window.firebaseDB) {
-              const cleanUser = msguser.replace('@', '').toLowerCase();
-              const snap = await window.firebaseDB.ref('users').orderByChild('username').equalTo(cleanUser).once('value');
-              if (snap.exists()) {
-                  const targetId = Object.keys(snap.val())[0];
-                  localStorage.setItem("pending_draft_msg", msg);
-                  window.location.href = `chat.html?chatId=${targetId}`;
-                  return;
-              }
-          }
-          
-          if (addUser && window.firebaseDB) {
-            if (addUser !== (combinedData.uid || combinedData.userKey)) {
-              const targetSnap = await window.firebaseDB.ref(`users/${addUser}`).once('value');
-              const targetData = targetSnap.val();
-              if (targetData) {
-                await window.firebaseDB.ref(`users/${combinedData.uid || combinedData.userKey}/chats/${addUser}`).set({
-                  name: targetData.name || targetData.username,
-                  type: 'direct',
-                  timestamp: Date.now()
-                });
-                await window.firebaseDB.ref(`users/${addUser}/chats/${combinedData.uid || combinedData.userKey}`).set({
-                  name: combinedData.nome || 'Usuário',
-                  type: 'direct',
-                  timestamp: Date.now()
-                });
-                window.location.href = `chat.html?chatId=${addUser}`;
-                return;
-              }
-            }
-          }
+                  // Handle Invites (Group, Comm, Msg, etc)
+                  const joinGroup = params.get("joinGroup");
+                  const joinComm = params.get("joinComm");
+                  const addUser = params.get("addUser");
+                  const msg = params.get("msg");
+                  const msguser = params.get("msguser");
 
-          if (joinGroup && window.firebaseDB) {
-            const groupSnap = await window.firebaseDB.ref(`groups/${joinGroup}`).once('value');
-            const groupData = groupSnap.val();
-            if (groupData) {
-              await window.firebaseDB.ref(`groups/${joinGroup}/members/${combinedData.uid || combinedData.userKey}`).set({ role: 'member', joinedAt: Date.now() });
-              await window.firebaseDB.ref(`users/${combinedData.uid || combinedData.userKey}/chats/${joinGroup}`).set({
-                name: groupData.name,
-                type: 'group',
-                timestamp: Date.now()
-              });
-              window.location.href = `chat.html?chatId=${joinGroup}`;
-              return;
-            }
-          }
-
-          if (joinComm && window.firebaseDB) {
-            const commSnap = await window.firebaseDB.ref(`communities/${joinComm}`).once('value');
-            const commData = commSnap.val();
-            if (commData) {
-              await window.firebaseDB.ref(`communities/${joinComm}/members/${combinedData.uid || combinedData.userKey}`).set({ role: 'membro', joinedAt: Date.now() });
-              await window.firebaseDB.ref(`users/${combinedData.uid || combinedData.userKey}/communities/${joinComm}`).set({
-                name: commData.name,
-                role: 'membro',
-                joinedAt: Date.now()
-              });
-              window.location.href = `community.html?commId=${joinComm}`;
-              return;
-            }
-          }
-
-          const pendingChannel = localStorage.getItem("pending_channel_redirect");
-          if (pendingChannel && window.firebaseDB) {
-              localStorage.removeItem("pending_channel_redirect");
-              const usersSnap = await window.firebaseDB.ref('users').once('value');
-              if (usersSnap.exists()) {
-                  const usersData = usersSnap.val();
-                  for (const [uid, uData] of Object.entries(usersData)) {
-                      if (uData.username && uData.username.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                          window.location.href = `channel.html?uid=${uid}`;
-                          return;
-                      }
-                      if (uData.name && uData.name.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                          window.location.href = `channel.html?uid=${uid}`;
-                          return;
-                      }
-                      if (uData.nome && uData.nome.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                          window.location.href = `channel.html?uid=${uid}`;
+                  if (msg && !msguser) {
+                      localStorage.setItem("pending_forward_msg", msg);
+                  }
+                  
+                  if (msguser && msg && window.firebaseDB) {
+                      const cleanUser = msguser.replace('@', '').toLowerCase();
+                      const snap = await window.firebaseDB.ref('users').orderByChild('username').equalTo(cleanUser).once('value');
+                      if (snap.exists()) {
+                          const targetId = Object.keys(snap.val())[0];
+                          localStorage.setItem("pending_draft_msg", msg);
+                          window.location.href = `chat.html?chatId=${targetId}`;
                           return;
                       }
                   }
-              }
-          }
+                  
+                  if (addUser && window.firebaseDB) {
+                    if (addUser !== uid) {
+                      const targetSnap = await window.firebaseDB.ref(`users/${addUser}`).once('value');
+                      const targetData = targetSnap.val();
+                      if (targetData) {
+                        await window.firebaseDB.ref(`users/${uid}/chats/${addUser}`).set({
+                          name: targetData.name || targetData.username,
+                          type: 'direct',
+                          timestamp: Date.now()
+                        });
+                        await window.firebaseDB.ref(`users/${addUser}/chats/${uid}`).set({
+                          name: combinedData.nome || 'Usuário',
+                          type: 'direct',
+                          timestamp: Date.now()
+                        });
+                        window.location.href = `chat.html?chatId=${addUser}`;
+                        return;
+                      }
+                    }
+                  }
 
-          setAppState('dashboard');
-        }
+                  if (joinGroup && window.firebaseDB) {
+                    const groupSnap = await window.firebaseDB.ref(`groups/${joinGroup}`).once('value');
+                    const groupData = groupSnap.val();
+                    if (groupData) {
+                      await window.firebaseDB.ref(`groups/${joinGroup}/members/${uid}`).set({ role: 'member', joinedAt: Date.now() });
+                      await window.firebaseDB.ref(`users/${uid}/chats/${joinGroup}`).set({
+                        name: groupData.name,
+                        type: 'group',
+                        timestamp: Date.now()
+                      });
+                      window.location.href = `chat.html?chatId=${joinGroup}`;
+                      return;
+                    }
+                  }
+
+                  if (joinComm && window.firebaseDB) {
+                    const commSnap = await window.firebaseDB.ref(`communities/${joinComm}`).once('value');
+                    const commData = commSnap.val();
+                    if (commData) {
+                      await window.firebaseDB.ref(`communities/${joinComm}/members/${uid}`).set({ role: 'membro', joinedAt: Date.now() });
+                      await window.firebaseDB.ref(`users/${uid}/communities/${joinComm}`).set({
+                        name: commData.name,
+                        role: 'membro',
+                        joinedAt: Date.now()
+                      });
+                      window.location.href = `community.html?commId=${joinComm}`;
+                      return;
+                    }
+                  }
+
+                  const pendingChannel = localStorage.getItem("pending_channel_redirect");
+                  if (pendingChannel && window.firebaseDB) {
+                      localStorage.removeItem("pending_channel_redirect");
+                      const usersSnap = await window.firebaseDB.ref('users').once('value');
+                      if (usersSnap.exists()) {
+                          const usersData = usersSnap.val();
+                          for (const [iterUid, uData] of Object.entries(usersData)) {
+                              if (uData.username && uData.username.toLowerCase().replace(/\s/g, '') === pendingChannel) {
+                                  window.location.href = `channel.html?uid=${iterUid}`;
+                                  return;
+                              }
+                              if (uData.name && uData.name.toLowerCase().replace(/\s/g, '') === pendingChannel) {
+                                  window.location.href = `channel.html?uid=${iterUid}`;
+                                  return;
+                              }
+                              if (uData.nome && uData.nome.toLowerCase().replace(/\s/g, '') === pendingChannel) {
+                                  window.location.href = `channel.html?uid=${iterUid}`;
+                                  return;
+                              }
+                          }
+                      }
+                  }
+
+                  setAppState('dashboard');
+                }
+            } else {
+                // Not authenticated, check for cookie token
+                const firebaseToken = getCookie('firebaseToken');
+                if (firebaseToken) {
+                    try {
+                        await window.firebaseAuth.signInWithCustomToken(firebaseToken);
+                        // Optionally clear the cookie so it's not reused unnecessarily
+                        document.cookie = "firebaseToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                    } catch (error) {
+                        console.error("Invalid custom token:", error);
+                        setAppState('login');
+                        window.location.href = "https://alexandre7888.github.io/sync-auth?redirect=https://phantora.codehub.site.je";
+                    }
+                } else {
+                    setAppState('login');
+                    // Automatically redirect to auth sync if no token and not logged in
+                    // window.location.href = "https://alexandre7888.github.io/sync-auth?redirect=https://phantora.codehub.site.je";
+                }
+            }
+        });
+
+        // We can just return and wait for auth state
+        return;
+        
+        // Old CodeHUB logic removed for Firebase Auth Custom Token.
 
       } catch (error) {
         console.error('Initialization error:', error);
@@ -313,10 +333,19 @@ function App() {
     initializeApp();
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem("userkey");
+  const handleLogout = async () => {
+    try {
+        if (window.firebaseAuth) {
+            await window.firebaseAuth.signOut();
+        }
+    } catch (e) {
+        console.error("Logout error", e);
+    }
+    document.cookie = "firebaseToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    localStorage.clear();
+    sessionStorage.clear();
     setUserData(null);
-    setAppState('login');
+    window.location.href = "https://alexandre7888.github.io/sync-auth?redirect=https://phantora.codehub.site.je";
   };
 
   const handleProfileComplete = (updatedData) => {
@@ -338,12 +367,10 @@ function App() {
         {appState === 'login' && <Login />}
         {appState === 'profile_setup' && <ProfileSetup userData={userData} onComplete={handleProfileComplete} />}
         {appState === 'dashboard' && (
-          <>
-            <ChatInterface user={{id: userData.uid || userData.userKey, name: userData.nome || 'Usuário', avatar: userData.profilePicture}} onLogout={handleLogout} />
-            <GlobalCallListener user={{id: userData.uid || userData.userKey, name: userData.nome || 'Usuário', avatar: userData.profilePicture}} />
-            {showTutorial && <TutorialOverlay onComplete={() => setShowTutorial(false)} />}
-            {pendingTvAuth && window.DeviceManager && <window.DeviceManager initialScannedId={pendingTvAuth} onClose={() => setPendingTvAuth(null)} />}
-          </>
+          <SocialNetwork 
+            user={{id: userData.uid, name: userData.nome || 'Usuário', avatar: userData.profilePicture}} 
+            onClose={handleLogout} 
+          />
         )}
       </div>
     );

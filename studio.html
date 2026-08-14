@@ -13,6 +13,7 @@
     <script src="https://resource.trickle.so/vendor_lib/unpkg/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://resource.trickle.so/vendor_lib/unpkg/lucide-static@0.516.0/font/lucide.css" rel="stylesheet">
+    <link rel="stylesheet" href="global.css">
     
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -22,25 +23,53 @@
     <style type="text/tailwindcss">
     @layer theme {
         :root {
-            --primary: #667eea;
-            --secondary: #764ba2;
-            --dark-bg: #0f172a;
-            --dark-surface: #1e293b;
-            --dark-border: #334155;
+            --bg-root: #08080d;
+            --bg-primary: #0c0c14;
+            --bg-secondary: #14141f;
+            --bg-tertiary: #1c1c2a;
+            --border-subtle: #1e1e30;
+            --border-default: #2a2a40;
+            --border-strong: #3a3a55;
+            --text-primary: #f2f2f7;
+            --text-secondary: #b0b0c0;
+            --text-tertiary: #707088;
+            --text-muted: #505068;
+            --accent-600: #7c3aed;
+            --accent-700: #6d28d9;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --info: #3b82f6;
+            --gradient-primary: linear-gradient(135deg, #7c3aed, #3b82f6);
+            --gradient-stories: linear-gradient(45deg, #f59e0b, #ec4899, #7c3aed);
+            --shadow-card: 0 2px 8px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.03);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+            --radius-md: 8px; --radius-lg: 10px; --radius-xl: 14px; --radius-2xl: 18px; --radius-full: 9999px;
+            
+            --dark-bg: var(--bg-root);
+            --dark-surface: var(--bg-secondary);
+            --dark-border: var(--border-default);
         }
     }
     @layer base {
+        html, body { 
+            margin: 0; 
+            padding: 0; 
+            background: var(--bg-root); 
+            color: var(--text-primary);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        #root, #app { margin-top: 0; padding-top: 0; }
+        header:empty, nav:empty, [class*="header"]:empty { display: none; }
+        
         body {
-            background-color: var(--dark-bg);
-            color: white;
-            font-family: 'Segoe UI', system-ui, sans-serif;
             overflow: hidden;
         }
-        /* Custom scrollbar para o modo escuro */
+        /* Custom scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
     }
     </style>
 </head>
@@ -50,11 +79,17 @@
     <script type="text/babel" src="utils/firebase-init.js"></script>
     <script type="text/babel" src="components/StudioMusicUpload.js"></script>
     <script type="text/babel" src="components/StudioMusicLibrary.js"></script>
+    <script type="text/babel" src="components/PostCreator.js"></script>
     <script type="text/babel" src="components/GenericUpload.js"></script>
     <script type="text/babel" src="components/LiveScheduleModal.js"></script>
     <script type="text/babel" src="components/PollConfigModal.js"></script>
     <script type="text/babel" src="components/StudioDashboard.js"></script>
+    <script type="text/babel" src="components/StudioMyContents.js"></script>
+    <script type="text/babel" src="components/StudioConsole.js"></script>
     <script type="text/babel" src="components/StudioLayout.js"></script>
     <script type="text/babel" src="studio-app.js"></script>
+    <script>
+        console.log("Estúdio inicializado com sucesso.");
+    </script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Phantora TV</title>
+    <title>Conversa - Phantora</title>
     <meta name="theme-color" content="#111827">
     
     <link rel="icon" type="image/png" href="https://app.trickle.so/storage/public/images/usr_1b4249e300000001/69bb1bd2-fc92-4f38-85f2-a598ae69ef5e.1000336397">
@@ -13,47 +13,38 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://resource.trickle.so/vendor_lib/unpkg/lucide-static@0.516.0/font/lucide.css" rel="stylesheet">
     <link rel="stylesheet" href="global.css">
+    
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    
+
     <style type="text/tailwindcss">
-    @layer theme { :root { --primary: #667eea; --secondary: #764ba2; } }
+    @layer theme {
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+        }
+    }
     @layer base { 
         body { 
-            background-color: #111827; 
-            color: white; 
-            font-family: 'Segoe UI', system-ui, sans-serif; 
+            background-color: #0a0a0f; 
+            color: #f0f0f5; 
+            font-family: 'Inter', system-ui, sans-serif; 
             overflow: hidden; 
         } 
-        /* Focus state para a navegação na TV */
-        .tv-focusable {
-            border: 2px solid transparent;
-            transition: all 0.2s;
-        }
-        .tv-focusable.tv-focused {
-            border-color: #667eea;
-            box-shadow: 0 0 15px rgba(102, 126, 234, 0.5);
-            transform: scale(1.02);
-            background-color: rgba(102, 126, 234, 0.1);
-        }
     }
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel" src="utils/crypto.js"></script>
+    <script type="text/babel" src="utils/settingsManager.js"></script>
+    <script type="text/babel" src="utils/permissions.js"></script>
     <script type="text/babel" src="utils/api.js"></script>
     <script type="text/babel" src="utils/firebase-init.js"></script>
     <script type="text/babel" src="components/CustomMediaPlayers.js"></script>
-    <script type="text/babel" src="utils/chatP2P.js"></script>
-    <script type="text/babel" src="utils/syncManager.js"></script>
-    <script type="text/babel" src="components/DeviceSyncStatus.js"></script>
-    <script type="text/babel" src="components/TVLoading.js"></script>
-    <script type="text/babel" src="components/TVAuth.js"></script>
-    <script type="text/babel" src="components/TVAccountSelect.js"></script>
-    <script type="text/babel" src="components/TVApp.js"></script>
-    <script type="text/babel" src="tv-app.js"></script>
+    <script type="text/babel" src="components/ContactInfoModal.js"></script>
+    <script type="text/babel" src="components/ConversationPage.js"></script>
+    <script type="text/babel" src="conversation-app.js"></script>
 </body>
 </html>

@@ -13,7 +13,6 @@ function App() {
                     return;
                 }
 
-                // Fetch user data from CodeHUB
                 const codeHubData = await window.api.getCodeHubUser(userKey);
                 if (!codeHubData || codeHubData.erro) {
                     window.location.href = 'index.html';
@@ -52,14 +51,14 @@ function App() {
         return (
             <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#0a0a0f]">
                 <div className="icon-loader animate-spin text-4xl text-[#667eea] mb-4"></div>
-                <p className="text-gray-400 font-medium">Carregando mensagens...</p>
+                <p className="text-gray-400 font-medium">Carregando conversa...</p>
             </div>
         );
     }
 
     if (!user) return null;
 
-    return <ChatPage user={user} />;
+    return <ConversationPage user={user} />;
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));

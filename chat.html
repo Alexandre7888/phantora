@@ -3,31 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>mensagensHUB Chat</title>
-    <meta name="theme-color" content="#667eea">
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-N4SK68P0DN"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-
-      gtag('config', 'G-N4SK68P0DN');
-    </script>
+    <title>Mensagens - Phantora</title>
+    <meta name="theme-color" content="#111827">
+    
     <link rel="icon" type="image/png" href="https://app.trickle.so/storage/public/images/usr_1b4249e300000001/69bb1bd2-fc92-4f38-85f2-a598ae69ef5e.1000336397">
-    <link rel="apple-touch-icon" href="https://app.trickle.so/storage/public/images/usr_1b4249e300000001/69bb1bd2-fc92-4f38-85f2-a598ae69ef5e.1000336397">
-
     <script src="https://resource.trickle.so/vendor_lib/unpkg/react@18/umd/react.production.min.js"></script>
     <script src="https://resource.trickle.so/vendor_lib/unpkg/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://resource.trickle.so/vendor_lib/unpkg/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://resource.trickle.so/vendor_lib/unpkg/lucide-static@0.516.0/font/lucide.css" rel="stylesheet">
-    <script type="module" src="https://unpkg.com/emoji-picker-element@1"></script>
+    <link rel="stylesheet" href="global.css">
+    
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
     <style type="text/tailwindcss">
     @layer theme {
@@ -36,61 +25,23 @@
             --secondary: #764ba2;
         }
     }
-    @layer base {
-        html, body, #root {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overscroll-behavior-y: none;
-        }
-        body {
-            background-color: #f3f4f6;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            overflow-x: hidden;
-            -webkit-tap-highlight-color: transparent;
-            -webkit-user-select: none;
-            user-select: none;
-            -webkit-font-smoothing: antialiased;
-        }
-        input, textarea, [contenteditable] {
-            -webkit-user-select: auto;
-            user-select: auto;
-        }
-        /* Custom scrollbar para parecer mais limpo/nativo */
-        ::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(0,0,0,0.1);
-            border-radius: 10px;
-        }
+    @layer base { 
+        body { 
+            background-color: #0a0a0f; 
+            color: #f0f0f5; 
+            font-family: 'Inter', system-ui, sans-serif; 
+            overflow: hidden; 
+        } 
     }
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel" src="utils/crypto.js"></script>
-    <script type="text/babel" src="utils/moderation.js"></script>
-    <script type="text/babel" src="utils/censor.js"></script>
-    <script type="text/babel" src="utils/settingsManager.js"></script>
+    <script type="text/babel" src="utils/permissions.js"></script>
     <script type="text/babel" src="utils/api.js"></script>
     <script type="text/babel" src="utils/firebase-init.js"></script>
-    <script type="text/babel" src="utils/syncManager.js"></script>
-    <script type="text/babel" src="utils/spamControl.js"></script>
-    <script type="text/babel" src="components/DeviceSyncStatus.js"></script>
-    <script type="text/babel" src="utils/chatP2P.js"></script>
-    <script type="text/babel" src="components/CustomMediaPlayers.js"></script>
-    <script type="text/babel" src="components/CameraCapture.js"></script>
-    <script type="text/babel" src="components/GifPicker.js"></script>
-    <script type="text/babel" src="components/MessageActionMenu.js"></script>
-    <script type="text/babel" src="components/ChatInput.js"></script>
-    <script type="text/babel" src="components/ChatRoom.js"></script>
-    <script type="text/babel" src="components/GlobalCallListener.js"></script>
+    <script type="text/babel" src="components/ChatPage.js"></script>
     <script type="text/babel" src="chat-app.js"></script>
 </body>
 </html>
