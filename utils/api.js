@@ -1,0 +1,319 @@
+// Tratamento global para evitar que erros do OneSignal quebrem a aplicação
+window.addEventListener('error', function(event) {
+  if (event.message && (event.message.includes('No subscription') || event.message.includes('Visibility change error') || event.message.includes('create-subscription'))) {
+    event.preventDefault();
+    console.warn('Ignorado erro inofensivo do OneSignal:', event.message);
+  }
+});
+
+window.addEventListener('unhandledrejection', function(event) {
+  if (event.reason && (
+      (typeof event.reason === 'string' && (event.reason.includes('No subscription') || event.reason.includes('Visibility change error'))) ||
+      (event.reason.message && (event.reason.message.includes('No subscription') || event.reason.message.includes('Visibility change error')))
+  )) {
+    event.preventDefault();
+    console.warn('Ignorado aviso de promise do OneSignal:', event.reason);
+  }
+});
+
+const api = {
+  // CodeHUB API
+  getCodeHubUser: async (userkey) => {
+    try {
+      let response;
+      try {
+        response = await fetch(`https://code-hub-eta.vercel.app/api/userkey.js?userkey=${encodeURIComponent(userkey)}`);
+      } catch (e) {
+        console.warn('Direct fetch failed, trying proxy...', e);
+        response = await fetch(`https://proxy-api.trickle-app.host/?url=${encodeURIComponent(`https://code-hub-eta.vercel.app/api/userkey.js?userkey=${userkey}`)}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('CodeHUB API Error:', error);
+      throw error;
+    }
+  },
+
+  // Firebase Realtime Database REST API
+  getAuthMap: async (privateId) => {
+    try {
+      const response = await fetch(`https://html-785e3-default-rtdb.firebaseio.com/auth_map/${privateId}.json`);
+      return await response.json();
+    } catch (error) {
+      console.error('Firebase Get Auth Map Error:', error);
+      throw error;
+    }
+  },
+
+  saveAuthMap: async (privateId, publicId) => {
+    try {
+      const response = await fetch(`https://html-785e3-default-rtdb.firebaseio.com/auth_map/${privateId}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publicId })
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Firebase Save Auth Map Error:', error);
+      throw error;
+    }
+  },
+
+  getFirebaseUser: async (publicId) => {
+    try {
+      const response = await fetch(`https://html-785e3-default-rtdb.firebaseio.com/users/${publicId}.json`);
+      return await response.json();
+    } catch (error) {
+      console.error('Firebase Get Error:', error);
+      throw error;
+    }
+  },
+
+  saveFirebaseUser: async (publicId, data) => {
+    try {
+      // Usando PUT para Firebase REST API, pois ele exclui os dados antigos no nó e salva os novos,
+      // correspondendo ao comportamento de "excluir tudo do usuário de antes e colocar um novo".
+      const response = await fetch(`https://html-785e3-default-rtdb.firebaseio.com/users/${publicId}.json`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Firebase Save Error:', error);
+      throw error;
+    }
+  },
+  
+  // Helper to convert file to base64
+  fileToBase64: (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = error => reject(error);
+    });
+  },
+
+  // Helper to compress image and convert to base64
+  uploadImageToService: async (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async function() {
+        try {
+          const URL = "https://script.google.com/macros/s/AKfycbzYlwb6VwgfW9R2ZKQ3QEIvPwakVAAdcfLxPN8gIFcMdpAzyTsZn1ZnglCuwKEpkOla/exec";
+          const resposta = await fetch(URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({ file: reader.result, fileName: file.name })
+          });
+          const dados = await resposta.json();
+          if (dados.url) {
+            resolve(dados.url);
+          } else {
+            reject("Erro no upload");
+          }
+        } catch (e) {
+          reject(e);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  },
+
+  compressImage: (file, maxWidth = 800, quality = 0.6) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
+  },
+
+  sendCallNotificationDirect: async (pushIds, callUrl) => {
+    if (pushIds && pushIds.length > 0) {
+        const idsStr = pushIds.join(',');
+        const titulo = encodeURIComponent("Chamada recebida");
+        const mensagem = encodeURIComponent("Toque para atender");
+        const urlEnc = encodeURIComponent(callUrl);
+        const buttons = encodeURIComponent(`Atender;${callUrl}`);
+        
+        const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${idsStr}&titulo=${titulo}&mensagem=${mensagem}&url=${urlEnc}&buttons=${buttons}`;
+        
+        try {
+            await fetch(`https://proxy-api.trickle-app.host/?url=${encodeURIComponent(scriptUrl)}`);
+        } catch (e) {
+            try {
+                await fetch(scriptUrl, { mode: 'no-cors' });
+            } catch (fallbackError) {
+                console.warn('Fallback notification error:', fallbackError);
+            }
+        }
+    }
+  },
+
+  sendCallNotification: async (targetIds, callUrl) => {
+    if (!window.firebaseDB) return;
+    try {
+      let pushIds = [];
+      for (const uid of targetIds) {
+        const snap = await window.firebaseDB.ref(`users/${uid}/oneSignalId`).once('value');
+        const pushId = snap.val();
+        if (pushId) pushIds.push(pushId);
+      }
+      
+      if (pushIds.length > 0) {
+        const idsStr = pushIds.join(',');
+        const titulo = encodeURIComponent("Chamada recebida");
+        const mensagem = encodeURIComponent("Toque para atender");
+        const urlEnc = encodeURIComponent(callUrl);
+        const buttons = encodeURIComponent(`Atender;${callUrl}`);
+        
+        const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${idsStr}&titulo=${titulo}&mensagem=${mensagem}&url=${urlEnc}&buttons=${buttons}`;
+        
+        try {
+            const response = await fetch(`https://proxy-api.trickle-app.host/?url=${encodeURIComponent(scriptUrl)}`);
+            return response.ok;
+        } catch (e) {
+            try {
+                await fetch(scriptUrl, { mode: 'no-cors' });
+                return true;
+            } catch (err) {
+                return false;
+            }
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('Call Notification Error:', error);
+      return false;
+    }
+  },
+
+  sendNotification: async (targetUserId, title, message) => {
+    if (!window.firebaseDB) return;
+    try {
+      const snap = await window.firebaseDB.ref(`users/${targetUserId}/oneSignalId`).once('value');
+      const pushId = snap.val();
+      if (pushId) {
+        const titulo = encodeURIComponent(title);
+        const mensagem = encodeURIComponent(message);
+        
+        // Usando o endpoint do Google Script conforme a documentação fornecida
+        const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${pushId}&titulo=${titulo}&mensagem=${mensagem}`;
+
+        // Tentando diretamente com no-cors para evitar problemas com o proxy
+        try {
+            await fetch(scriptUrl, { mode: 'no-cors' });
+            console.log("Notificação enviada (no-cors)");
+        } catch (e) {
+            console.error("Erro ao enviar notificação:", e);
+        }
+      }
+    } catch (error) {
+      console.error('Notification Error:', error);
+    }
+  },
+
+  setUserOnlineStatus: async (userId, isOnline) => {
+    if (!window.firebaseDB) return;
+    try {
+        const statusRef = window.firebaseDB.ref(`users/${userId}/status`);
+        await statusRef.update({
+            online: isOnline,
+            lastSeen: window.firebase.database.ServerValue.TIMESTAMP
+        });
+        
+        if (isOnline) {
+            statusRef.onDisconnect().update({
+                online: false,
+                lastSeen: window.firebase.database.ServerValue.TIMESTAMP
+            });
+        }
+    } catch (e) {
+        console.error("Erro ao definir status online:", e);
+    }
+  },
+
+  uploadToCDN: async (file, uid, folderType) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', `${uid}/${folderType}`);
+    
+    try {
+      let res;
+      try {
+        res = await fetch("https://cdn-phantora-api.puter.work/upload", {
+          method: "POST",
+          body: formData
+        });
+        if (!res.ok) throw new Error("Status " + res.status);
+      } catch (directErr) {
+        console.warn("Upload direto falhou (provavelmente CORS), tentando proxy...", directErr);
+        res = await fetch("https://proxy-api.trickle-app.host/?url=" + encodeURIComponent("https://cdn-phantora-api.puter.work/upload"), {
+          method: "POST",
+          body: formData
+        });
+      }
+      
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error("CDN Response não é JSON. Status:", res?.status, "Texto:", text.substring(0, 200));
+        throw new Error("O servidor da CDN está indisponível ou retornou um erro (Não JSON).");
+      }
+
+      if (data.success) {
+        return data.file?.url || data.url || data.file_url || (typeof data.file === 'string' ? data.file : '');
+      } else {
+        throw new Error(data.error || 'Erro no upload para CDN');
+      }
+    } catch (err) {
+      console.error("Upload CDN Error:", err);
+      throw err;
+    }
+  },
+
+  deleteFromCDN: async (filename) => {
+    const key = "phantora-secret-key-123";
+    try {
+      const res = await fetch("https://cdn-phantora-api.puter.work/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, action: "delete", filename })
+      });
+      const data = await res.json();
+      return data.success;
+    } catch (err) {
+      console.error("Delete CDN Error:", err);
+      return false;
+    }
+  }
+};
+window.api = api;
