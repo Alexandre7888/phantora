@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Definir Token de Autenticação</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0a0a0f; color: #f0f0f5; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="bg-[#13131a] p-8 rounded-xl shadow-lg max-w-md w-full border border-[#252530]">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-white mb-2">Autenticação Manual</h1>
+            <p class="text-[#a0a0b0] text-sm">Insira seu token personalizado do Firebase abaixo para acessar o sistema.</p>
+        </div>
+        
+        <div class="space-y-4">
+            <div>
+                <label for="tokenInput" class="block text-sm font-medium text-[#a0a0b0] mb-1">Token de Autenticação</label>
+                <textarea 
+                    id="tokenInput" 
+                    rows="4" 
+                    class="w-full bg-[#0a0a0f] border border-[#3d3d50] rounded-lg p-3 text-white focus:outline-none focus:border-[#7c3aed] transition-colors"
+                    placeholder="Cole seu token longo aqui..."
+                ></textarea>
+            </div>
+            
+            <button 
+                id="saveBtn"
+                class="w-full bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-medium py-3 px-4 rounded-lg transition-colors flex justify-center items-center gap-2"
+            >
+                Salvar e Entrar
+            </button>
+            
+            <p id="statusMsg" class="text-center text-sm hidden mt-2"></p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('saveBtn').addEventListener('click', function() {
+            const token = document.getElementById('tokenInput').value.trim();
+            const statusMsg = document.getElementById('statusMsg');
+            
+            if (!token) {
+                statusMsg.textContent = "Por favor, insira um token válido.";
+                statusMsg.className = "text-center text-sm text-red-500 mt-2 block";
+                return;
+            }
+            
+            // Define o token no cookie (válido para todo o site)
+            document.cookie = "firebaseToken=" + encodeURIComponent(token) + "; path=/;";
+            
+            statusMsg.textContent = "Token salvo! Redirecionando...";
+            statusMsg.className = "text-center text-sm text-green-500 mt-2 block";
+            
+            // Redireciona para a página inicial
+            setTimeout(() => {
+                window.location.href = "index.html";
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

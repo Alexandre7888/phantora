@@ -276,23 +276,27 @@ function App() {
                   const pendingChannel = localStorage.getItem("pending_channel_redirect");
                   if (pendingChannel && window.firebaseDB) {
                       localStorage.removeItem("pending_channel_redirect");
-                      const usersSnap = await window.firebaseDB.ref('users').once('value');
-                      if (usersSnap.exists()) {
-                          const usersData = usersSnap.val();
-                          for (const [iterUid, uData] of Object.entries(usersData)) {
-                              if (uData.username && uData.username.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                                  window.location.href = `channel.html?uid=${iterUid}`;
-                                  return;
-                              }
-                              if (uData.name && uData.name.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                                  window.location.href = `channel.html?uid=${iterUid}`;
-                                  return;
-                              }
-                              if (uData.nome && uData.nome.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                                  window.location.href = `channel.html?uid=${iterUid}`;
-                                  return;
+                      try {
+                          const usersSnap = await window.firebaseDB.ref('users').once('value');
+                          if (usersSnap.exists()) {
+                              const usersData = usersSnap.val();
+                              for (const [iterUid, uData] of Object.entries(usersData)) {
+                                  if (uData.username && uData.username.toLowerCase().replace(/\s/g, '') === pendingChannel) {
+                                      window.location.href = `channel.html?uid=${iterUid}`;
+                                      return;
+                                  }
+                                  if (uData.name && uData.name.toLowerCase().replace(/\s/g, '') === pendingChannel) {
+                                      window.location.href = `channel.html?uid=${iterUid}`;
+                                      return;
+                                  }
+                                  if (uData.nome && uData.nome.toLowerCase().replace(/\s/g, '') === pendingChannel) {
+                                      window.location.href = `channel.html?uid=${iterUid}`;
+                                      return;
+                                  }
                               }
                           }
+                      } catch (err) {
+                          console.warn("Erro ao buscar usuários (verifique as regras do Firebase):", err);
                       }
                   }
 
@@ -309,7 +313,6 @@ function App() {
                     } catch (error) {
                         console.error("Invalid custom token:", error);
                         setAppState('login');
-                        window.location.href = "https://alexandre7888.github.io/sync-auth?redirect=https://phantora.codehub.site.je";
                     }
                 } else {
                     setAppState('login');
@@ -345,7 +348,7 @@ function App() {
     localStorage.clear();
     sessionStorage.clear();
     setUserData(null);
-    window.location.href = "https://alexandre7888.github.io/sync-auth?redirect=https://phantora.codehub.site.je";
+    setAppState('login');
   };
 
   const handleProfileComplete = (updatedData) => {
