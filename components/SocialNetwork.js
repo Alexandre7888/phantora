@@ -1,6 +1,15 @@
 function SocialNetwork({ user, onClose }) {
     const [posts, setPosts] = React.useState([]);
     const [stories, setStories] = React.useState([]);
+    
+    // Pagination states
+    const [lastPostKey, setLastPostKey] = React.useState(null);
+    const [hasMorePosts, setHasMorePosts] = React.useState(true);
+    const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+    
+    const [lastVideoKey, setLastVideoKey] = React.useState(null);
+    const [hasMoreVideos, setHasMoreVideos] = React.useState(true);
+    const [isLoadingMoreVideos, setIsLoadingMoreVideos] = React.useState(false);
     const [activeStory, setActiveStory] = React.useState(null);
     const [editingPostId, setEditingPostId] = React.useState(null);
     const [activeCommentPost, setActiveCommentPost] = React.useState(null);
@@ -9,7 +18,6 @@ function SocialNetwork({ user, onClose }) {
     // Novas funcionalidades
     const [activeVideoFeed, setActiveVideoFeed] = React.useState(null); // null or starting index
     const [infiniteFeed, setInfiniteFeed] = React.useState([]); // array of videos for infinite scroll
-    const [showVideoComments, setShowVideoComments] = React.useState(null);
     const [searchQuery, setSearchQuery] = React.useState('');
     const [showShareModal, setShowShareModal] = React.useState(false);
     const [postToShare, setPostToShare] = React.useState(null);
@@ -26,11 +34,12 @@ function SocialNetwork({ user, onClose }) {
     const [toast, setToast] = React.useState(null);
     const [now, setNow] = React.useState(Date.now());
     const [following, setFollowing] = React.useState({});
+    const [bufferingVideos, setBufferingVideos] = React.useState({});
     const [userInterests, setUserInterests] = React.useState({});
     const [pendingLink, setPendingLink] = React.useState(null);
     const watchTimers = React.useRef({});
     const viewStartTime = React.useRef(null);
-    const likeSoundRef = React.useRef(new Audio('https://alexandre7888.github.io/phantora/assets/47313572-ui-sounds-pack-2-sound-1-358893.mp3'));
+    const likeSoundRef = React.useRef(new Audio('https://actions.google.com/sounds/v1/foley/pop_hollow.ogg'));
 
     // Upload states
     const [isUploading, setIsUploading] = React.useState(false);
@@ -86,34 +95,49 @@ function SocialNetwork({ user, onClose }) {
             });
         }
 
-        const postsRef = db.ref('posts');
-        const listener = postsRef.on('value', async (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                const postsList = Object.keys(data).map(key => ({
+        // Carregar stories (últimas 24h)
+        const fetchStories = async () => {
+            const storiesSnap = await db.ref('posts').orderByChild('type').equalTo('story').once('value');
+            if (storiesSnap.exists()) {
+                const data = storiesSnap.val();
+                const storyPosts = Object.keys(data).map(key => ({ id: key, ...data[key] }))
+                    .filter(p => Date.now() - p.timestamp < 24 * 60 * 60 * 1000);
+                setStories(storyPosts);
+            }
+        };
+        fetchStories();
+
+        // Primeira carga de posts (30 itens)
+        const loadInitialPosts = async () => {
+            const snap = await db.ref('posts').orderByKey().limitToLast(30).once('value');
+            if (snap.exists()) {
+                const data = snap.val();
+                const keys = Object.keys(data);
+                const firstKey = keys[0]; // A chave mais antiga do lote (para paginação)
+                
+                const postsList = keys.map(key => ({
                     id: key,
                     ...data[key],
                     likesCount: data[key].likes ? Object.keys(data[key].likes).length : 0,
                     hasLiked: data[key].likes ? !!data[key].likes[user.id] : false,
                     commentsCount: data[key].comments ? Object.keys(data[key].comments).length : 0,
-                }));
-                
-                const normalPosts = postsList.filter(p => p.type !== 'story');
-                const storyPosts = postsList.filter(p => p.type === 'story' && (Date.now() - p.timestamp < 24 * 60 * 60 * 1000));
-                
-                setStories(storyPosts);
+                })).filter(p => p.type !== 'story');
 
+                if (keys.length < 30) setHasMorePosts(false);
+                setLastPostKey(firstKey);
+                
                 if (window.sortFeedByAlgorithm) {
-                    const sorted = await window.sortFeedByAlgorithm(user.id, normalPosts);
-                    setPosts([...sorted]);
+                    const sorted = await window.sortFeedByAlgorithm(user.id, postsList);
+                    setPosts(sorted);
                 } else {
-                    setPosts(normalPosts);
+                    setPosts(postsList.reverse()); // Mais recentes primeiro
                 }
             } else {
                 setPosts([]);
-                setStories([]);
+                setHasMorePosts(false);
             }
-        });
+        };
+        loadInitialPosts();
 
         const followsRef = db.ref(`follows/${user.id}`);
         const followsListener = followsRef.on('value', (snap) => {
@@ -122,29 +146,87 @@ function SocialNetwork({ user, onClose }) {
         
         // Fetch Suggestions
         const fetchSuggestions = async () => {
-            const usersSnap = await db.ref('users').limitToLast(20).once('value');
-            if (usersSnap.exists()) {
-                const usersData = usersSnap.val();
-                const suggestions = [];
-                Object.keys(usersData).forEach(uid => {
-                    if (uid !== user.id) {
-                        suggestions.push({
-                            id: uid,
-                            ...usersData[uid]
-                        });
-                    }
-                });
-                // Shuffle and pick 5
-                setFriendSuggestions(suggestions.sort(() => 0.5 - Math.random()).slice(0, 5));
+            try {
+                const usersSnap = await db.ref('users').limitToLast(20).once('value');
+                if (usersSnap.exists()) {
+                    const usersData = usersSnap.val();
+                    const suggestions = [];
+                    Object.keys(usersData).forEach(uid => {
+                        if (uid !== user.id) {
+                            suggestions.push({
+                                id: uid,
+                                ...usersData[uid]
+                            });
+                        }
+                    });
+                    // Shuffle and pick 5
+                    setFriendSuggestions(suggestions.sort(() => 0.5 - Math.random()).slice(0, 5));
+                }
+            } catch (err) {
+                console.warn("Erro ao carregar sugestões de amigos (verifique permissões):", err);
             }
         };
         fetchSuggestions();
 
         return () => {
-            postsRef.off('value', listener);
             followsRef.off('value', followsListener);
         };
     }, [user.id]);
+
+    // Função para carregar mais posts no feed principal (30 itens)
+    const loadMorePosts = async () => {
+        if (!hasMorePosts || isLoadingMore || !lastPostKey) return;
+        setIsLoadingMore(true);
+        
+        try {
+            const db = window.firebaseDB;
+            const snap = await db.ref('posts').orderByKey().endBefore(lastPostKey).limitToLast(30).once('value');
+            
+            if (snap.exists()) {
+                const data = snap.val();
+                const keys = Object.keys(data);
+                
+                if (keys.length === 0) {
+                    setHasMorePosts(false);
+                    return;
+                }
+                
+                const firstKey = keys[0];
+                const newPostsList = keys.map(key => ({
+                    id: key,
+                    ...data[key],
+                    likesCount: data[key].likes ? Object.keys(data[key].likes).length : 0,
+                    hasLiked: data[key].likes ? !!data[key].likes[user.id] : false,
+                    commentsCount: data[key].comments ? Object.keys(data[key].comments).length : 0,
+                })).filter(p => p.type !== 'story');
+
+                setLastPostKey(firstKey);
+                
+                let sortedNewPosts = newPostsList.reverse();
+                if (window.sortFeedByAlgorithm) {
+                    sortedNewPosts = await window.sortFeedByAlgorithm(user.id, newPostsList);
+                }
+                
+                setPosts(prev => [...prev, ...sortedNewPosts]);
+                
+                if (keys.length < 30) setHasMorePosts(false);
+            } else {
+                setHasMorePosts(false);
+            }
+        } catch (error) {
+            console.error("Erro ao carregar mais posts:", error);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    };
+
+    // Scroll listener para o feed principal
+    const handleScroll = (e) => {
+        const { scrollTop, clientHeight, scrollHeight } = e.target;
+        if (scrollHeight - scrollTop <= clientHeight + 300) { // 300px antes do final
+            loadMorePosts();
+        }
+    };
 
     // Handle opening direct video from URL once posts are loaded
     React.useEffect(() => {
@@ -199,7 +281,14 @@ function SocialNetwork({ user, onClose }) {
                         if (entry.isIntersecting) {
                             setActiveVideoFeed(idx);
                             if (video && video.paused) {
-                                video.play().catch(e => console.log("Autoplay bloqueado", e));
+                                video.play().catch(e => {
+                                    console.warn("Autoplay bloqueado pelo navegador:", e);
+                                    const container = video.closest('[data-index]');
+                                    if (container) {
+                                        const overlay = container.querySelector('.play-icon-overlay');
+                                        if (overlay) overlay.style.opacity = '1';
+                                    }
+                                });
                             }
                             
                             // Análises: Registrar tempo do vídeo anterior
@@ -210,25 +299,90 @@ function SocialNetwork({ user, onClose }) {
                                     // Reportar view
                                     const db = window.firebaseDB;
                                     if (db && timeSpent > 1000) { // pelo menos 1 segundo
-                                        db.ref(`video_analytics/${prevVideo.authorId}/${prevVideo.id}`).push({
-                                            watchTimeMs: timeSpent,
-                                            timestamp: Date.now(),
-                                            viewerId: 'anonymous' // Anônimo como pedido
-                                        });
+                                        try {
+                                            db.ref(`video_analytics/${prevVideo.authorId}/${prevVideo.id}`).push({
+                                                watchTimeMs: timeSpent,
+                                                timestamp: Date.now(),
+                                                viewerId: 'anonymous' // Anônimo como pedido
+                                            }).catch(err => console.warn('Erro ao salvar analytics:', err.message));
+                                        } catch(e) {
+                                            console.warn('Erro ao tentar salvar analytics:', e);
+                                        }
                                     }
                                 }
                             }
                             
                             viewStartTime.current = Date.now();
 
-                            // Infinite scroll logic: if we are near the end, append more videos
-                            if (idx >= infiniteFeed.length - 2) {
-                                let recommended = window.AlgorithmManager ? window.AlgorithmManager.getRecommendedVideos(user.id, videoPostsRef.current) : videoPostsRef.current;
-                                if (recommended.length === 0) recommended = videoPostsRef.current; // Fallback
+                            // Infinite scroll logic para vídeos: carrega mais 10
+                            if (idx >= infiniteFeed.length - 2 && !isLoadingMoreVideos && hasMoreVideos) {
+                                setIsLoadingMoreVideos(true);
                                 
-                                // Generate unique keys for appended videos
-                                const appended = recommended.map((v, i) => ({...v, uniqueKey: `${v.id}_${Date.now()}_${i}`}));
-                                setInfiniteFeed(prev => [...prev, ...appended]);
+                                // Buscar mais 10 vídeos no firebase se não tivermos em cache
+                                const loadMoreVids = async () => {
+                                    try {
+                                        const db = window.firebaseDB;
+                                        let query = db.ref('posts').orderByKey();
+                                        if (lastVideoKey) {
+                                            query = query.endBefore(lastVideoKey);
+                                        }
+                                        const snap = await query.limitToLast(30).once('value'); // busca mais pois precisamos filtrar por vídeo
+                                        
+                                        if (snap.exists()) {
+                                            const data = snap.val();
+                                            const keys = Object.keys(data);
+                                            if (keys.length === 0) {
+                                                setHasMoreVideos(false);
+                                                return;
+                                            }
+                                            
+                                            setLastVideoKey(keys[0]);
+                                            
+                                            const rawVids = keys.map(key => ({
+                                                id: key, ...data[key],
+                                                likesCount: data[key].likes ? Object.keys(data[key].likes).length : 0,
+                                                hasLiked: data[key].likes ? !!data[key].likes[user.id] : false,
+                                                commentsCount: data[key].comments ? Object.keys(data[key].comments).length : 0,
+                                            })).filter(p => p.type === 'video' || (p.mediaUrl && (p.mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i) || (p.mediaUrl.includes('file-') && p.mediaUrl.includes('-mp4')))));
+                                            
+                                            // Se não achou vídeos suficientes, pega do cache/algoritmo
+                                            let finalVids = rawVids.slice(0, 10);
+                                            if (finalVids.length < 10) {
+                                                let recommended = window.AlgorithmManager ? window.AlgorithmManager.getRecommendedVideos(user.id, videoPostsRef.current) : videoPostsRef.current;
+                                                if (recommended.length === 0) recommended = videoPostsRef.current;
+                                                finalVids = [...finalVids, ...recommended.slice(0, 10 - finalVids.length)];
+                                            }
+                                            
+                                            const appended = finalVids.map((v, i) => ({...v, uniqueKey: `${v.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`}));
+                                            
+                                            setInfiniteFeed(prev => {
+                                                const newFeed = [...prev, ...appended];
+                                                const unique = [];
+                                                const seen = new Set();
+                                                for (const item of newFeed) {
+                                                    if (!seen.has(item.uniqueKey)) {
+                                                        seen.add(item.uniqueKey);
+                                                        unique.push(item);
+                                                    }
+                                                }
+                                                return unique;
+                                            });
+                                        } else {
+                                            setHasMoreVideos(false);
+                                            // Fallback para repetir os recomendados se a base acabou
+                                            let recommended = window.AlgorithmManager ? window.AlgorithmManager.getRecommendedVideos(user.id, videoPostsRef.current) : videoPostsRef.current;
+                                            if (recommended.length > 0) {
+                                                const appended = recommended.slice(0, 10).map((v, i) => ({...v, uniqueKey: `${v.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`}));
+                                                setInfiniteFeed(prev => [...prev, ...appended]);
+                                            }
+                                        }
+                                    } catch (err) {
+                                        console.error(err);
+                                    } finally {
+                                        setIsLoadingMoreVideos(false);
+                                    }
+                                };
+                                loadMoreVids();
                             }
 
                         } else {
@@ -930,7 +1084,7 @@ function SocialNetwork({ user, onClose }) {
                 </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 max-w-2xl mx-auto w-full space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 max-w-2xl mx-auto w-full space-y-6" onScroll={handleScroll}>
                 
                 {/* Search Redirect Button */}
                 <div className={`p-4 ${cardBg} mb-6`}>
@@ -1206,381 +1360,42 @@ function SocialNetwork({ user, onClose }) {
                         </div>
                     ))
                 )}
+                
+                {isLoadingMore && (
+                    <div className="flex justify-center py-4">
+                        <div className="icon-loader animate-spin text-accent text-3xl"></div>
+                    </div>
+                )}
+                {!hasMorePosts && posts.length > 0 && (
+                    <div className="text-center py-4 text-text-muted text-sm">
+                        Você chegou ao fim do feed.
+                    </div>
+                )}
             </div>
 
             {/* Fullscreen TikTok Style Video Feed */}
-            {activeVideoFeed !== null && (
-                <div className="fixed inset-0 bg-black z-[90] flex flex-col animate-fade-in-up">
-                    <button onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        document.querySelectorAll('video').forEach(vid => {
-                            if (!vid.paused) vid.pause();
-                        });
+            {activeVideoFeed !== null && window.VideoFeed && (
+                <window.VideoFeed
+                    initialVideos={infiniteFeed}
+                    initialActiveIndex={activeVideoFeed}
+                    onClose={() => {
                         setActiveVideoFeed(null);
                         const newUrl = `${window.location.origin}${window.location.pathname}`;
                         window.history.replaceState({ path: newUrl }, '', newUrl);
-                    }} className="absolute top-4 left-4 z-[100] text-white bg-black/50 p-2 rounded-full backdrop-blur-sm hover:bg-black/70 cursor-pointer" style={{ zIndex: 9999 }}>
-                        <div className="icon-arrow-left text-2xl"></div>
-                    </button>
-                    
-                    <div ref={videoContainerRef} className="flex-1 w-full h-full snap-y snap-mandatory overflow-y-scroll no-scrollbar bg-black relative">
-                        {infiniteFeed.map((vPost, index) => {
-                            return (
-                            <div key={vPost.uniqueKey || vPost.id} data-index={index} className="w-full h-full snap-start snap-always relative flex items-center justify-center bg-black">
-                                <video 
-                                    src={vPost.mediaUrl} 
-                                    className="w-full h-full object-contain md:object-cover max-w-md mx-auto pointer-events-none" 
-                                    loop 
-                                    playsInline 
-                                    autoPlay={index === activeVideoFeed}
-                                    id={`tiktok-video-${index}`}
-                                />
-                                
-                                {/* Overlay Invisível para Pausar se o vídeo não pegar o clique */}
-                                <div 
-                                    className="absolute inset-0 z-10 cursor-pointer flex items-center justify-center" 
-                                    onClick={(e) => {
-                                        // Apenas executa se não for originado do controle remoto da TV
-                                        if (e.detail === 0 && e.clientX === 0 && e.clientY === 0) return;
-                                        
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        const vid = document.getElementById(`tiktok-video-${index}`);
-                                        if (vid) {
-                                            if (vid.paused) {
-                                                vid.play().catch(err => console.error("Play failed", err));
-                                                e.currentTarget.classList.remove('paused-overlay');
-                                            } else {
-                                                vid.pause();
-                                                e.currentTarget.classList.add('paused-overlay');
-                                            }
-                                        }
-                                    }}
-                                >
-                                    <div className="opacity-0 transition-opacity duration-200 play-icon-overlay pointer-events-none">
-                                        <div className="w-24 h-24 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
-                                            <div className="icon-play text-white text-5xl ml-2 opacity-90"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <style dangerouslySetInnerHTML={{__html:`
-                                    .paused-overlay .play-icon-overlay { opacity: 1 !important; }
-                                `}} />
-
-                                {/* Overlays de Texto e Links no Vídeo */}
-                                <div className="absolute inset-0 max-w-md mx-auto pointer-events-none z-10 overflow-hidden">
-                                    {vPost.overlays && vPost.overlays.map(t => (
-                                        <div key={`txt_${t.id}`} className="absolute transform -translate-x-1/2 -translate-y-1/2 font-bold text-center drop-shadow-md" style={{ left: `${t.x}%`, top: `${t.y}%`, color: t.color, fontSize: '5vh' }}>
-                                            {t.text}
-                                        </div>
-                                    ))}
-                                    {vPost.links && vPost.links.map(l => (
-                                        <div 
-                                            key={`lnk_${l.id}`} 
-                                            className="absolute transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-                                            style={{ left: `${l.x}%`, top: `${l.y}%` }}
-                                        >
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setPendingLink({ url: l.url, videoId: vPost.id, authorId: vPost.authorId });
-                                                }}
-                                                className="bg-white/90 backdrop-blur text-indigo-600 px-4 py-2 rounded-lg font-bold text-sm shadow-lg flex items-center gap-2 hover:scale-105 transition"
-                                            >
-                                                <div className="icon-link"></div> {l.text}
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Overlay UI */}
-                                <div className="absolute inset-0 max-w-md mx-auto pointer-events-none flex flex-col justify-end p-4 pb-8 bg-gradient-to-t from-black/80 via-transparent to-transparent z-20">
-                                    <div className="flex items-end justify-between w-full">
-                                        {/* Info area */}
-                                        <div className="flex-1 pr-14 text-white pointer-events-auto">
-                                            <h3 className="font-bold text-lg hover:underline cursor-pointer" onClick={() => { window.location.href = `channel.html?uid=${vPost.authorId}`; }}>@{(vPost.authorName || 'usuario').replace(/\s/g, '').toLowerCase()}</h3>
-                                            <p className="text-sm mt-2 font-medium">{vPost.title}</p>
-                                            <div className="text-sm mt-1 text-gray-200 line-clamp-3">
-                                                {renderTextWithHashtags(vPost.content)}
-                                            </div>
-                                            
-                                            <div className="flex items-center gap-2 mt-4 bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-sm cursor-pointer hover:bg-white/20 transition">
-                                                <div className="icon-music text-xs animate-pulse"></div>
-                                                <span className="text-xs font-medium truncate max-w-[150px]">Som original - {vPost.authorName || 'Desconhecido'}</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Actions Side */}
-                                        <div className="flex flex-col items-center gap-5 pb-2 pointer-events-auto">
-                                            <div className="relative">
-                                                <img src={vPost.authorAvatar || 'https://via.placeholder.com/150'} className="w-12 h-12 rounded-full border-2 border-white object-cover cursor-pointer" onClick={() => { window.location.href = `channel.html?uid=${vPost.authorId}`; }}/>
-                                                {vPost.authorId !== user.id && !following[vPost.authorId] && (
-                                                    <button onClick={() => toggleFollow(vPost.authorId)} className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-red-500 rounded-full w-5 h-5 flex items-center justify-center border border-white">
-                                                        <div className="icon-plus text-[10px] text-white"></div>
-                                                    </button>
-                                                )}
-                                            </div>
-                                            
-                                            <button onClick={(e) => { e.stopPropagation(); handleLike(vPost.id, vPost.hasLiked, true, vPost.uniqueKey); }} className="flex flex-col items-center gap-1 group">
-                                                <div className={`w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center group-hover:bg-black/60 transition ${vPost.hasLiked ? 'text-red-500' : 'text-white'}`}>
-                                                    <div className={`icon-heart text-2xl ${vPost.hasLiked ? 'fill-current' : ''}`}></div>
-                                                </div>
-                                                <span className="text-xs text-white font-medium">{vPost.likesCount}</span>
-                                            </button>
-                                            
-                                            <button onClick={(e) => {
-                                                e.stopPropagation();
-                                                setShowVideoComments(vPost);
-                                            }} className="flex flex-col items-center gap-1 group">
-                                                <div className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center group-hover:bg-black/60 transition text-white">
-                                                    <div className="icon-message-circle text-2xl"></div>
-                                                </div>
-                                                <span className="text-xs text-white font-medium">{vPost.commentsCount}</span>
-                                            </button>
-                                            
-                                            <button onClick={(e) => { 
-                                                e.stopPropagation(); 
-                                                showToast("Preparando Remix...");
-                                            }} className="flex flex-col items-center gap-1 group">
-                                                <div className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center group-hover:bg-black/60 transition text-white">
-                                                    <div className="icon-wand-sparkles text-2xl"></div>
-                                                </div>
-                                                <span className="text-xs text-white font-medium">Remix</span>
-                                            </button>
-
-                                            <div className="relative group mt-2">
-                                                <button className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center hover:bg-black/60 transition text-white">
-                                                    <div className="icon-more-vertical text-xl"></div>
-                                                </button>
-                                                <div className="absolute right-12 bottom-0 bg-black/80 backdrop-blur-md rounded-xl p-2 hidden group-hover:flex flex-col gap-2 w-48">
-                                                    <button onClick={(e) => { e.stopPropagation(); handleShare(vPost); }} className="text-xs text-white px-3 py-2 hover:bg-white/20 rounded flex items-center gap-2">
-                                                        <div className="icon-share-2"></div> Compartilhar
-                                                    </button>
-                                                    <div className="h-px bg-gray-700 my-1"></div>
-                                                    <button onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if(window.updateAlgorithmProfile) {
-                                                            window.updateAlgorithmProfile(user.id, 'dislike', vPost.hashtags, -5);
-                                                        }
-                                                        
-                                                        const newFeed = infiniteFeed.filter(p => p.uniqueKey !== vPost.uniqueKey);
-                                                        setInfiniteFeed(newFeed);
-                                                        showToast("Marcado como não interessado");
-                                                        
-                                                    }} className="text-xs text-white px-3 py-2 hover:bg-white/20 rounded flex items-center gap-2">
-                                                        <div className="icon-thumbs-down"></div> Não interessado
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {vPost.allowDownload !== false && (
-                                                <button onClick={async () => {
-                                                    try {
-                                                        showToast("Iniciando download...");
-                                                        const response = await fetch(vPost.mediaUrl);
-                                                        const blob = await response.blob();
-                                                        const url = window.URL.createObjectURL(blob);
-                                                        const a = document.createElement('a');
-                                                        a.style.display = 'none';
-                                                        a.href = url;
-                                                        a.download = `phantora_video_${vPost.id}.mp4`;
-                                                        document.body.appendChild(a);
-                                                        a.click();
-                                                        window.URL.revokeObjectURL(url);
-                                                        document.body.removeChild(a);
-                                                        showToast("Download concluído!");
-                                                    } catch (e) {
-                                                        console.error("Erro no download:", e);
-                                                        showToast("Baixando via link alternativo...");
-                                                        const a = document.createElement('a');
-                                                        a.href = vPost.mediaUrl;
-                                                        a.target = "_blank";
-                                                        a.download = `phantora_video_${vPost.id}.mp4`;
-                                                        document.body.appendChild(a);
-                                                        a.click();
-                                                        document.body.removeChild(a);
-                                                    }
-                                                }} className="flex flex-col items-center gap-1 group mt-2">
-                                                    <div className="w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center group-hover:bg-black/60 transition text-white">
-                                                        <div className="icon-download text-lg"></div>
-                                                    </div>
-                                                </button>
-                                            )}
-
-                                            <div 
-                                                onClick={() => {
-                                                    const audioId = vPost.audioId || `default_${vPost.id}`;
-                                                    window.location.href = `audio.html?id=${audioId}`;
-                                                }}
-                                                className="w-10 h-10 rounded-full border-4 border-gray-800 animate-[spin_4s_linear_infinite] mt-2 overflow-hidden flex-shrink-0 cursor-pointer relative"
-                                            >
-                                                <img src={vPost.audioCover || vPost.authorAvatar || 'https://via.placeholder.com/150'} className="w-full h-full object-cover"/>
-                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                    <div className="w-2 h-2 bg-gray-900 rounded-full"></div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    {quickShareUserId && (
-                                        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[110] pointer-events-auto">
-                                            <button 
-                                                onClick={handleQuickShare}
-                                                disabled={isQuickSharing || quickShareSuccess}
-                                                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full pl-2 pr-4 py-2 flex items-center gap-3 shadow-xl transform transition-transform active:scale-95 disabled:opacity-90"
-                                            >
-                                                {isQuickSharing ? (
-                                                    <div className="icon-loader text-xl animate-spin ml-1"></div>
-                                                ) : quickShareSuccess ? (
-                                                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                                                        <svg className="w-5 h-5 text-white animate-[stroke_0.6s_ease-out_forwards]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
-                                                        </svg>
-                                                    </div>
-                                                ) : (
-                                                    <div className="relative">
-                                                        <img src={quickShareUserAvatar || 'https://via.placeholder.com/150'} className="w-8 h-8 rounded-full object-cover border border-white" />
-                                                        <div className="absolute -bottom-1 -right-1 bg-white rounded-full w-4 h-4 flex items-center justify-center">
-                                                            <div className="icon-share text-[10px] text-indigo-600"></div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                <span className="font-bold text-sm">
-                                                    {isQuickSharing ? 'Compartilhando...' : quickShareSuccess ? 'Enviado!' : 'Compartilhar de volta'}
-                                                </span>
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Overlay de Comentários do Vídeo (Bottom Sheet) */}
-                    {showVideoComments && (
-                        <div className="absolute inset-0 z-[200] flex flex-col justify-end pointer-events-auto">
-                            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowVideoComments(null)}></div>
-                            <div className="relative bg-gray-900 w-full h-[60vh] rounded-t-2xl flex flex-col shadow-2xl border-t border-gray-800 animate-fade-in-up">
-                                <div className="p-4 border-b border-gray-800 flex justify-between items-center shrink-0">
-                                    <h3 className="font-bold text-white">Comentários ({showVideoComments.commentsCount})</h3>
-                                    <button onClick={() => setShowVideoComments(null)} className="text-gray-400 hover:text-white p-1">
-                                        <div className="icon-x text-xl"></div>
-                                    </button>
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                                    {showVideoComments.comments && Object.keys(showVideoComments.comments).length > 0 ? (
-                                        Object.keys(showVideoComments.comments).map(cId => {
-                                            const comment = showVideoComments.comments[cId];
-                                            return (
-                                                <div key={cId} className="flex gap-3">
-                                                    {comment.authorAvatar ? (
-                                                        <img src={comment.authorAvatar} className="w-8 h-8 rounded-full object-cover shrink-0" />
-                                                    ) : (
-                                                        <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white shrink-0">
-                                                            {(comment.authorName || '?').charAt(0)}
-                                                        </div>
-                                                    )}
-                                                    <div className="flex-1">
-                                                        <div className="flex justify-between items-start">
-                                                            <span className="font-bold text-sm text-gray-300">{comment.authorName || 'Usuário'}</span>
-                                                            {(comment.authorId === user.id || showVideoComments.authorId === user.id) && (
-                                                                <button onClick={async () => {
-                                                                    if (window.confirm("Apagar este comentário?")) {
-                                                                        await window.firebaseDB.ref(`posts/${showVideoComments.id}/comments/${cId}`).remove();
-                                                                        // Update local state to reflect deletion immediately
-                                                                        const updatedPost = {...showVideoComments};
-                                                                        delete updatedPost.comments[cId];
-                                                                        updatedPost.commentsCount = Object.keys(updatedPost.comments).length;
-                                                                        setShowVideoComments(updatedPost);
-                                                                    }
-                                                                }} className="text-gray-500 hover:text-red-500 text-xs">
-                                                                    <div className="icon-trash"></div>
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                        <p className="text-sm text-gray-100 mt-1">{comment.text}</p>
-                                                        <span className="text-[10px] text-gray-500 mt-1 block">{getRelativeTime(comment.timestamp)}</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <p className="text-center text-gray-500 text-sm mt-8">Nenhum comentário ainda. Seja o primeiro a comentar!</p>
-                                    )}
-                                </div>
-                                <div className="p-4 border-t border-gray-800 shrink-0 bg-gray-900 pb-8">
-                                    <div className="flex gap-2">
-                                        <input 
-                                            type="text" 
-                                            value={commentText}
-                                            onChange={(e) => setCommentText(e.target.value)}
-                                            placeholder="Adicionar comentário..."
-                                            className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none bg-gray-800 text-white border border-gray-700 focus:border-indigo-500"
-                                            onKeyDown={async (e) => {
-                                                if (e.key === 'Enter' && commentText.trim()) {
-                                                    const db = window.firebaseDB;
-                                                    const newRef = await db.ref(`posts/${showVideoComments.id}/comments`).push({
-                                                        authorId: user.id,
-                                                        authorName: user.name,
-                                                        authorAvatar: user.avatar || '',
-                                                        text: commentText.trim(),
-                                                        timestamp: Date.now()
-                                                    });
-                                                    setCommentText('');
-                                                    // O listener global vai atualizar o post, mas podemos atualizar o local para ser instantâneo
-                                                    const updatedPost = {...showVideoComments};
-                                                    if (!updatedPost.comments) updatedPost.comments = {};
-                                                    updatedPost.comments[newRef.key] = {
-                                                        authorId: user.id,
-                                                        authorName: user.name,
-                                                        authorAvatar: user.avatar || '',
-                                                        text: commentText.trim(),
-                                                        timestamp: Date.now()
-                                                    };
-                                                    updatedPost.commentsCount = Object.keys(updatedPost.comments).length;
-                                                    setShowVideoComments(updatedPost);
-                                                }
-                                            }}
-                                        />
-                                        <button 
-                                            onClick={async () => {
-                                                if(commentText.trim()) {
-                                                    const db = window.firebaseDB;
-                                                    const newRef = await db.ref(`posts/${showVideoComments.id}/comments`).push({
-                                                        authorId: user.id,
-                                                        authorName: user.name,
-                                                        authorAvatar: user.avatar || '',
-                                                        text: commentText.trim(),
-                                                        timestamp: Date.now()
-                                                    });
-                                                    setCommentText('');
-                                                    const updatedPost = {...showVideoComments};
-                                                    if (!updatedPost.comments) updatedPost.comments = {};
-                                                    updatedPost.comments[newRef.key] = {
-                                                        authorId: user.id,
-                                                        authorName: user.name,
-                                                        authorAvatar: user.avatar || '',
-                                                        text: commentText.trim(),
-                                                        timestamp: Date.now()
-                                                    };
-                                                    updatedPost.commentsCount = Object.keys(updatedPost.comments).length;
-                                                    setShowVideoComments(updatedPost);
-                                                }
-                                            }}
-                                            disabled={!commentText.trim()}
-                                            className="bg-indigo-600 text-white p-2.5 rounded-full disabled:opacity-50 hover:bg-indigo-700"
-                                        >
-                                            <div className="icon-send text-sm"></div>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                    }}
+                    user={user}
+                    following={following}
+                    toggleFollow={toggleFollow}
+                    handleLike={handleLike}
+                    handleShare={handleShare}
+                    quickShareUserId={quickShareUserId}
+                    quickShareUserAvatar={quickShareUserAvatar}
+                    handleQuickShare={handleQuickShare}
+                    isQuickSharing={isQuickSharing}
+                    quickShareSuccess={quickShareSuccess}
+                    renderTextWithHashtags={renderTextWithHashtags}
+                    getRelativeTime={getRelativeTime}
+                />
             )}
 
             {/* Share Modal */}
@@ -1682,10 +1497,12 @@ function SocialNetwork({ user, onClose }) {
                                     // Registrar clique no analytics
                                     const db = window.firebaseDB;
                                     if(db) {
-                                        db.ref(`video_analytics/${pendingLink.authorId}/${pendingLink.videoId}_clicks`).push({
-                                            timestamp: Date.now(),
-                                            url: pendingLink.url
-                                        });
+                                        try {
+                                            db.ref(`video_analytics/${pendingLink.authorId}/${pendingLink.videoId}_clicks`).push({
+                                                timestamp: Date.now(),
+                                                url: pendingLink.url
+                                            }).catch(e => console.warn('Erro analytics clique:', e.message));
+                                        } catch (e) {}
                                     }
                                     window.open(pendingLink.url, '_blank');
                                     setPendingLink(null);
