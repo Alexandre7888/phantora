@@ -98,23 +98,33 @@ function SocialNetwork({ user, onClose }) {
         }
 
         // Carregar stories (últimas 24h)
-        // Pedir localização
-        if (navigator.geolocation && !localStorage.getItem('location_saved')) {
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                try {
-                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
-                    const data = await res.json();
-                    if (data && data.address && data.address.city) {
-                        await db.ref(`users/${user.id}`).update({ city: data.address.city });
-                        localStorage.setItem('location_saved', 'true');
+        const requestLocation = () => {
+            if (navigator.geolocation && !localStorage.getItem('location_saved')) {
+                navigator.geolocation.getCurrentPosition(async (pos) => {
+                    try {
+                        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+                        const data = await res.json();
+                        if (data && data.address && data.address.city) {
+                            await db.ref(`users/${user.id}`).update({ city: data.address.city });
+                            localStorage.setItem('location_saved', 'true');
+                        }
+                    } catch(e) {
+                        console.log("Erro na localização:", e);
                     }
-                } catch(e) {
-                    console.log("Erro na localização:", e);
-                }
-            }, () => {
-                console.log("Localização negada.");
-            });
-        }
+                }, () => {
+                    console.log("Localização negada.");
+                });
+            }
+        };
+        
+        // Pedir localização automaticamente no login
+        requestLocation();
+
+        // Expõe a função globalmente para ser chamada pelo botão se necessário
+        window.requestUserLocation = () => {
+            localStorage.removeItem('location_saved'); // Força a pedir de novo se clicar
+            requestLocation();
+        };
 
         const fetchStories = async () => {
             const storiesSnap = await db.ref('posts').orderByChild('type').equalTo('story').once('value');
@@ -1041,7 +1051,10 @@ function SocialNetwork({ user, onClose }) {
                 </div>
                 
                 <div className="flex items-center gap-1 sm:gap-2">
-                    <button onClick={() => setShowDiscovery(true)} className={`p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-accent transition-colors`} title="Descobrir Pessoas">
+                    <button onClick={() => {
+                        if (window.requestUserLocation) window.requestUserLocation();
+                        setShowDiscovery(true);
+                    }} className={`p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-accent transition-colors`} title="Descobrir Pessoas">
                         <div className="icon-users text-xl"></div>
                     </button>
                     <button onClick={() => window.location.href = 'search.html'} className={`p-2 hidden sm:block rounded-full text-text-secondary hover:bg-tertiary hover:text-text-primary transition-colors`} title="Pesquisar">
