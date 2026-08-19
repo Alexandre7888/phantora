@@ -40,7 +40,7 @@ function SocialNetwork({ user, onClose }) {
     const [pendingLink, setPendingLink] = React.useState(null);
     const watchTimers = React.useRef({});
     const viewStartTime = React.useRef(null);
-    const likeSoundRef = React.useRef(new Audio('https://actions.google.com/sounds/v1/foley/pop_hollow.ogg'));
+    const likeSoundRef = React.useRef(null); // Som de like desativado temporariamente devido ao link quebrado
 
     // Upload states
     const [isUploading, setIsUploading] = React.useState(false);
@@ -104,9 +104,15 @@ function SocialNetwork({ user, onClose }) {
                     try {
                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
                         const data = await res.json();
-                        if (data && data.address && data.address.city) {
-                            await db.ref(`users/${user.id}`).update({ city: data.address.city });
-                            localStorage.setItem('location_saved', 'true');
+                        if (data && data.address) {
+                            const city = data.address.city || data.address.town || data.address.village || data.address.municipality || "Desconhecida";
+                            const state = data.address.state || "Desconhecido";
+                            
+                            if (city !== "Desconhecida" && state !== "Desconhecido") {
+                                await db.ref(`users/${user.id}`).update({ city: city, state: state });
+                                await db.ref(`location_users/${state}/${city}/${user.id}`).set(true);
+                                localStorage.setItem('location_saved', 'true');
+                            }
                         }
                     } catch(e) {
                         console.log("Erro na localização:", e);
@@ -232,23 +238,31 @@ function SocialNetwork({ user, onClose }) {
         // Fetch Suggestions
         const fetchSuggestions = async () => {
             try {
-                const usersSnap = await db.ref('users').limitToLast(20).once('value');
-                if (usersSnap.exists()) {
-                    const usersData = usersSnap.val();
-                    const suggestions = [];
-                    Object.keys(usersData).forEach(uid => {
-                        if (uid !== user.id) {
-                            suggestions.push({
-                                id: uid,
-                                ...usersData[uid]
-                            });
-                        }
-                    });
-                    // Shuffle and pick 5
-                    setFriendSuggestions(suggestions.sort(() => 0.5 - Math.random()).slice(0, 5));
+                // Ao invés de consultar a raiz /users que está bloqueada por permissão,
+                // vamos pegar as sugestões pela mesma lógica do FriendSwipe (mesma cidade)
+                const currentUserSnap = await db.ref(`users/${user.id}`).once('value').catch(() => null);
+                const currentUserData = currentUserSnap && currentUserSnap.exists() ? currentUserSnap.val() : {};
+                const city = currentUserData.city || user.city;
+                const state = currentUserData.state || user.state;
+
+                if (city && state) {
+                    const locationSnap = await db.ref(`location_users/${state}/${city}`).limitToLast(20).once('value').catch(() => null);
+                    if (locationSnap && locationSnap.exists()) {
+                        const userIds = Object.keys(locationSnap.val()).filter(id => id && id.trim() !== '' && id !== user.id);
+                        const promises = userIds.map(id => db.ref(`users/${id}`).once('value').catch(() => null));
+                        const snaps = await Promise.all(promises);
+                        
+                        const list = snaps
+                            .filter(snap => snap && snap.exists())
+                            .map(snap => ({ id: snap.key, ...snap.val() }));
+                            
+                        setFriendSuggestions(list.sort(() => 0.5 - Math.random()).slice(0, 5));
+                        return;
+                    }
                 }
+                setFriendSuggestions([]);
             } catch (err) {
-                console.warn("Erro ao carregar sugestões de amigos (verifique permissões):", err);
+                console.warn("Erro ao carregar sugestões de amigos:", err);
             }
         };
         fetchSuggestions();
@@ -1037,6 +1051,8 @@ function SocialNetwork({ user, onClose }) {
                 </div>
             )}
 
+            {window.FriendRequestNotification && <window.FriendRequestNotification user={user} />}
+
             <header className={`${headerBg} px-4 py-3 flex items-center justify-between sticky top-0 z-10 transition-colors`}>
                 <div className="flex items-center gap-3">
                     <img 
@@ -1053,7 +1069,7 @@ function SocialNetwork({ user, onClose }) {
                 <div className="flex items-center gap-1 sm:gap-2">
                     <button onClick={() => {
                         if (window.requestUserLocation) window.requestUserLocation();
-                        setShowDiscovery(true);
+                        window.location.href = 'discover.html';
                     }} className={`p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-accent transition-colors`} title="Descobrir Pessoas">
                         <div className="icon-users text-xl"></div>
                     </button>

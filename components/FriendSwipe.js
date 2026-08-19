@@ -7,39 +7,83 @@ function FriendSwipe({ user, onClose }) {
         const fetchSuggestions = async () => {
             const db = window.firebaseDB;
             if (!db) return;
+            
+            const userId = user.id || user.uid;
+            if (!userId) {
+                setLoading(false);
+                return;
+            }
+
             try {
-                // Simplificação: pegando usuários e filtrando
-                const usersSnap = await db.ref('users').limitToLast(50).once('value');
-                if (usersSnap.exists()) {
-                    const data = usersSnap.val();
-                    const list = Object.keys(data)
-                        .filter(k => k !== user.id)
-                        .map(k => ({ id: k, ...data[k] }));
-                    setSuggestions(list.sort(() => 0.5 - Math.random()));
+                // Pega a cidade e estado do usuário atual
+                const currentUserSnap = await db.ref(`users/${userId}`).once('value').catch(e => {
+                    console.warn("Aviso ao ler usuário atual:", e);
+                    return null;
+                });
+                
+                const currentUserData = currentUserSnap && currentUserSnap.exists() ? currentUserSnap.val() : {};
+                const city = currentUserData.city || user.city;
+                const state = currentUserData.state || user.state;
+
+                if (city && state) {
+                    // Busca IDs dos usuários na mesma cidade e estado
+                    const locationSnap = await db.ref(`location_users/${state}/${city}`).once('value').catch(e => {
+                        console.error("Erro ao ler location_users:", e);
+                        return null;
+                    });
+                    
+                    if (locationSnap && locationSnap.exists()) {
+                        const locationData = locationSnap.val();
+                        // Garante que o ID não seja vazio para não consultar a raiz /users acidentalmente
+                        const userIds = Object.keys(locationData).filter(id => id && id.trim() !== '' && id !== userId);
+                        
+                        // Busca os dados completos de cada usuário (trata erro individualmente para não quebrar tudo)
+                        const promises = userIds.map(id => 
+                            db.ref(`users/${id}`).once('value').catch(e => {
+                                console.warn(`Sem permissão para ler perfil ${id}:`, e);
+                                return null;
+                            })
+                        );
+                        
+                        const snaps = await Promise.all(promises);
+                        
+                        const list = snaps
+                            .filter(snap => snap && snap.exists())
+                            .map(snap => ({ id: snap.key, ...snap.val() }));
+                            
+                        setSuggestions(list.sort(() => 0.5 - Math.random()));
+                    } else {
+                        setSuggestions([]);
+                    }
+                } else {
+                    setSuggestions([]);
                 }
             } catch (e) {
-                console.error(e);
+                console.error("Erro geral no FriendSwipe:", e);
             }
             setLoading(false);
         };
         fetchSuggestions();
-    }, [user.id]);
+    }, [user]);
 
     const handleAction = async (targetUser, action) => {
         const db = window.firebaseDB;
         if (!db) return;
         
+        const userId = user.id || user.uid;
+        if (!userId) return;
+        
         if (action === 'like') {
-            await db.ref(`friend_requests/${targetUser.id}/${user.id}`).set({
+            await db.ref(`friend_requests/${targetUser.id}/${userId}`).set({
                 timestamp: Date.now(),
                 status: 'pending'
-            });
+            }).catch(console.error);
             // Notificar
             if (window.api && window.api.sendNotification) {
-                window.api.sendNotification(targetUser.id, "Novo pedido de amizade", `${user.name} quer ser seu amigo!`);
+                window.api.sendNotification(targetUser.id, "Novo pedido de amizade", `${user.name || 'Alguém'} quer ser seu amigo!`);
             }
         } else {
-            await db.ref(`ignored_suggestions/${user.id}/${targetUser.id}`).set(Date.now());
+            await db.ref(`ignored_suggestions/${userId}/${targetUser.id}`).set(Date.now()).catch(console.error);
         }
         
         setCurrentIndex(prev => prev + 1);
@@ -71,7 +115,12 @@ function FriendSwipe({ user, onClose }) {
                     />
                     <div className="p-6 text-center">
                         <h3 className="text-xl font-bold text-primary">{currentProfile.name || currentProfile.username}</h3>
-                        {currentProfile.city && <p className="text-text-secondary text-sm flex items-center justify-center gap-1 mt-1"><div className="icon-map-pin text-xs"></div> {currentProfile.city}</p>}
+                        {(currentProfile.city || currentProfile.state) && (
+                            <p className="text-text-secondary text-sm flex items-center justify-center gap-1 mt-1">
+                                <div className="icon-map-pin text-xs"></div> 
+                                {currentProfile.city}{currentProfile.city && currentProfile.state ? ', ' : ''}{currentProfile.state}
+                            </p>
+                        )}
                         
                         <div className="flex justify-center gap-6 mt-6">
                             <button 
