@@ -11,7 +11,17 @@ self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+      .then(cache => {
+        return Promise.allSettled(
+          urlsToCache.map(url => 
+            fetch(url)
+              .then(response => {
+                if(response.ok) return cache.put(url, response);
+              })
+              .catch(err => console.warn('Falha ao armazenar no cache:', url, err))
+          )
+        );
+      })
   );
 });
 
@@ -36,7 +46,7 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       const fetchPromise = fetch(event.request).then(networkResponse => {
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+        if (networkResponse && networkResponse.status === 200 && (networkResponse.type === 'basic' || networkResponse.type === 'cors')) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
             cache.put(event.request, responseToCache);
@@ -44,8 +54,12 @@ self.addEventListener('fetch', event => {
         }
         return networkResponse;
       }).catch(err => {
-        console.warn('Network request failed, using cache', err);
+        console.warn('Network request failed:', event.request.url, err);
+        // Fallback para evitar travamento da página
+        if (cachedResponse) return cachedResponse;
+        return new Response('', { status: 404, statusText: 'Not Found' });
       });
+      
       return cachedResponse || fetchPromise;
     })
   );

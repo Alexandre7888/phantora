@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Canal do Usuário - Phantora</title>
+    <meta name="theme-color" content="#667eea">
+    
+    <link rel="icon" type="image/png" href="https://app.trickle.so/storage/public/images/usr_1b4249e300000001/69bb1bd2-fc92-4f38-85f2-a598ae69ef5e.1000336397">
+    <script src="https://resource.trickle.so/vendor_lib/unpkg/react@18/umd/react.production.min.js"></script>
+    <script src="https://resource.trickle.so/vendor_lib/unpkg/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://resource.trickle.so/vendor_lib/unpkg/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://resource.trickle.so/vendor_lib/unpkg/lucide-static@0.516.0/font/lucide.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            200: '#ddd6fe',
+                            300: '#c4b5fd',
+                            400: '#a78bfa',
+                            500: '#8b5cf6',
+                            600: '#7c3aed',
+                            700: '#6d28d9',
+                            800: '#5b21b6',
+                            900: '#4c1d95',
+                        },
+                        primary: '#0a0a0f',
+                        secondary: '#13131a',
+                        tertiary: '#1a1a24',
+                        border: '#252530',
+                        'border-active': '#3d3d50',
+                        'text-primary': '#f0f0f5',
+                        'text-secondary': '#a0a0b0',
+                        'text-muted': '#6b6b7b',
+                        accent: '#7c3aed',
+                        'accent-hover': '#6d28d9',
+                        'accent-light': '#a78bfa',
+                        success: '#10b981',
+                        warning: '#f59e0b',
+                        danger: '#ef4444',
+                        info: '#3b82f6'
+                    },
+                    boxShadow: {
+                        'sm': '0 1px 3px rgba(0, 0, 0, 0.4)',
+                        'md': '0 4px 12px rgba(0, 0, 0, 0.5)',
+                        'lg': '0 8px 30px rgba(0, 0, 0, 0.6)',
+                        'accent': '0 4px 20px rgba(124, 58, 237, 0.3)',
+                        'card': '0 2px 8px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.03)'
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.2s ease-out',
+                        'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        'ripple': 'ripple 0.6s linear',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        ripple: {
+                            '0%': { transform: 'scale(0)', opacity: '0.5' },
+                            '100%': { transform: 'scale(4)', opacity: '0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style type="text/tailwindcss">
+    @layer theme {
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+        }
+    }
+    @layer utilities {
+        .glass {
+            @apply bg-white/80 backdrop-blur-lg border-b border-gray-200/50;
+        }
+        .glass-dark {
+            @apply bg-gray-900/80 backdrop-blur-lg border-b border-gray-800/50;
+        }
+        .active-scale {
+            @apply active:scale-95 transition-transform;
+        }
+        .card-shadow {
+            @apply shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05),0_4px_12px_-2px_rgba(0,0,0,0.05)];
+        }
+    }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel" src="utils/crypto.js"></script>
+    <script type="text/babel" src="utils/api.js"></script>
+    <script type="text/babel" src="utils/firebase-init.js"></script>
+    <script type="text/babel" src="components/ChannelSubscription.js"></script>
+    <script type="text/babel" src="components/UserChannel.js"></script>
+    <script type="text/babel" src="canal-app.js"></script>
+</body>
+</html>

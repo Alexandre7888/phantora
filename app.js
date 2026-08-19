@@ -282,15 +282,15 @@ function App() {
                               const usersData = usersSnap.val();
                               for (const [iterUid, uData] of Object.entries(usersData)) {
                                   if (uData.username && uData.username.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                                      window.location.href = `channel.html?uid=${iterUid}`;
+                                      window.location.href = `canal.html?uid=${iterUid}`;
                                       return;
                                   }
                                   if (uData.name && uData.name.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                                      window.location.href = `channel.html?uid=${iterUid}`;
+                                      window.location.href = `canal.html?uid=${iterUid}`;
                                       return;
                                   }
                                   if (uData.nome && uData.nome.toLowerCase().replace(/\s/g, '') === pendingChannel) {
-                                      window.location.href = `channel.html?uid=${iterUid}`;
+                                      window.location.href = `canal.html?uid=${iterUid}`;
                                       return;
                                   }
                               }
