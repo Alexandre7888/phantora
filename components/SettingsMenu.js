@@ -128,8 +128,91 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
 
                         <div>
                             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Perfil de Chat</h3>
-                            <div className="bg-gray-50 p-4 rounded-xl mb-6">
-                                <label className="block mb-2">
+                            <div className="bg-gray-50 p-4 rounded-xl mb-6 space-y-4">
+                                <div>
+                                    <span className="font-medium text-gray-700 text-sm block mb-2">Foto de Perfil</span>
+                                    <div className="flex items-center gap-4">
+                                        <img src={window.currentUserData?.profilePicture || window.currentUserData?.avatar || 'https://via.placeholder.com/150'} className="w-16 h-16 rounded-full object-cover border border-gray-200" />
+                                        <div className="flex-1">
+                                            <input 
+                                                type="file" 
+                                                id="profilePicInput" 
+                                                accept="image/*" 
+                                                className="hidden" 
+                                                onChange={async (e) => {
+                                                    const file = e.target.files[0];
+                                                    if (!file) return;
+                                                    
+                                                    const btn = document.getElementById('uploadPicBtn');
+                                                    const oldText = btn.innerText;
+                                                    btn.innerText = 'Enviando...';
+                                                    btn.disabled = true;
+
+                                                    try {
+                                                        const reader = new FileReader();
+                                                        const base64 = await new Promise((resolve, reject) => {
+                                                            reader.onload = () => resolve(reader.result);
+                                                            reader.onerror = () => reject(new Error("Erro ao ler imagem"));
+                                                            reader.readAsDataURL(file);
+                                                        });
+
+                                                        const API = "https://script.google.com/macros/s/AKfycbxJj1Q68v6io5oyF-GDvuJldJ_JunJo-YeU-gGfgOYmdeeUTXjnBovcWRBU7Kbt22-v/exec";
+                                                        const response = await fetch(API, {
+                                                            method: "POST",
+                                                            headers: { "Content-Type": "text/plain" },
+                                                            body: JSON.stringify({
+                                                                action: "upload",
+                                                                file: base64,
+                                                                fileName: `avatar_${window.currentUserData.uid || window.currentUserData.userKey}_${Date.now()}.jpg`
+                                                            })
+                                                        });
+                                                        
+                                                        const result = JSON.parse(await response.text());
+                                                        if (result.success && result.url) {
+                                                            let newUrl = result.url;
+                                                            // Versionamento para quebrar cache
+                                                            const currentUrl = window.currentUserData.profilePicture || window.currentUserData.avatar || '';
+                                                            let version = 1;
+                                                            if (currentUrl.includes('?v=')) {
+                                                                const match = currentUrl.match(/\?v=(\d+)/);
+                                                                if (match) version = parseInt(match[1]) + 1;
+                                                            }
+                                                            newUrl = `${newUrl}?v=${version}`;
+
+                                                            const uid = window.currentUserData.uid || window.currentUserData.userKey;
+                                                            await window.firebaseDB.ref(`users/${uid}`).update({
+                                                                profilePicture: newUrl,
+                                                                avatar: newUrl
+                                                            });
+                                                            
+                                                            window.currentUserData.profilePicture = newUrl;
+                                                            window.currentUserData.avatar = newUrl;
+                                                            
+                                                            alert("Foto de perfil atualizada com sucesso!");
+                                                            // Force re-render of this component to show new image
+                                                            setSettings({...settings}); 
+                                                        } else {
+                                                            alert("Erro ao enviar: " + (result.error || "Desconhecido"));
+                                                        }
+                                                    } catch (err) {
+                                                        alert("Erro: " + err.message);
+                                                    } finally {
+                                                        btn.innerText = oldText;
+                                                        btn.disabled = false;
+                                                    }
+                                                }}
+                                            />
+                                            <button 
+                                                id="uploadPicBtn"
+                                                onClick={() => document.getElementById('profilePicInput').click()}
+                                                className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-bold text-sm hover:bg-indigo-200 transition"
+                                            >
+                                                Alterar Foto
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <label className="block mb-2 border-t pt-4">
                                     <span className="font-medium text-gray-700 text-sm">Apelido no Chat</span>
                                     <p className="text-xs text-gray-500 mb-2">Esse nome aparecerá apenas nas mensagens, escondendo seu nome real.</p>
                                     <div className="flex gap-2">

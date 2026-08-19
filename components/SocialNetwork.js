@@ -28,6 +28,7 @@ function SocialNetwork({ user, onClose }) {
     const [quickShareUserAvatar, setQuickShareUserAvatar] = React.useState(null);
     const [isQuickSharing, setIsQuickSharing] = React.useState(false);
     const [quickShareSuccess, setQuickShareSuccess] = React.useState(false);
+    const [showDiscovery, setShowDiscovery] = React.useState(false);
     const [activeHashtag, setActiveHashtag] = React.useState(null);
     const [filterType, setFilterType] = React.useState('all');
     const [theme, setTheme] = React.useState(localStorage.getItem('social_theme') || 'light');
@@ -51,6 +52,7 @@ function SocialNetwork({ user, onClose }) {
     
     // Post Creator Modal
     const [showPostCreator, setShowPostCreator] = React.useState(false);
+    const [desktopView, setDesktopView] = React.useState('feed');
 
     // Chat Component
     const [showChatComponent, setShowChatComponent] = React.useState(false);
@@ -96,6 +98,24 @@ function SocialNetwork({ user, onClose }) {
         }
 
         // Carregar stories (últimas 24h)
+        // Pedir localização
+        if (navigator.geolocation && !localStorage.getItem('location_saved')) {
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+                    const data = await res.json();
+                    if (data && data.address && data.address.city) {
+                        await db.ref(`users/${user.id}`).update({ city: data.address.city });
+                        localStorage.setItem('location_saved', 'true');
+                    }
+                } catch(e) {
+                    console.log("Erro na localização:", e);
+                }
+            }, () => {
+                console.log("Localização negada.");
+            });
+        }
+
         const fetchStories = async () => {
             const storiesSnap = await db.ref('posts').orderByChild('type').equalTo('story').once('value');
             if (storiesSnap.exists()) {
@@ -107,21 +127,76 @@ function SocialNetwork({ user, onClose }) {
         };
         fetchStories();
 
+        const fetchUserData = async (uid) => {
+            if (!uid) return { name: 'Usuário', avatar: 'https://via.placeholder.com/150', username: 'usuario' };
+            if (window._userCache && window._userCache[uid]) return window._userCache[uid];
+            
+            try {
+                const snap = await db.ref(`users/${uid}`).once('value');
+                const uData = snap.val() || {};
+                const result = {
+                    name: uData.name || 'Usuário',
+                    avatar: uData.profilePicture || uData.avatar || 'https://via.placeholder.com/150',
+                    username: uData.username || (uData.name || 'usuario').toLowerCase().replace(/\s/g, ''),
+                    isVerified: !!uData.isVerified
+                };
+                if (!window._userCache) window._userCache = {};
+                window._userCache[uid] = result;
+                return result;
+            } catch(e) {
+                return { name: 'Usuário', avatar: 'https://via.placeholder.com/150', username: 'usuario' };
+            }
+        };
+
+        const processPostsWithUsers = async (data) => {
+            const keys = Object.keys(data);
+            const postsList = [];
+            for (const key of keys) {
+                const p = data[key];
+                if (p.type === 'story') continue;
+                
+                const uData = await fetchUserData(p.authorId);
+                
+                // Process comments
+                let processedComments = {};
+                if (p.comments) {
+                    for (const cId of Object.keys(p.comments)) {
+                        const c = p.comments[cId];
+                        const cUData = await fetchUserData(c.authorId);
+                        processedComments[cId] = {
+                            ...c,
+                            authorName: cUData.name,
+                            authorAvatar: cUData.avatar,
+                            authorUsername: cUData.username
+                        };
+                    }
+                }
+
+                postsList.push({
+                    id: key,
+                    ...p,
+                    authorName: uData.name,
+                    authorAvatar: uData.avatar,
+                    authorUsername: uData.username,
+                    isVerified: uData.isVerified,
+                    comments: processedComments,
+                    likesCount: p.likes ? Object.keys(p.likes).length : 0,
+                    hasLiked: p.likes ? !!p.likes[user.id] : false,
+                    commentsCount: p.comments ? Object.keys(p.comments).length : 0,
+                });
+            }
+            return postsList;
+        };
+
         // Primeira carga de posts (30 itens)
         const loadInitialPosts = async () => {
             const snap = await db.ref('posts').orderByKey().limitToLast(30).once('value');
             if (snap.exists()) {
                 const data = snap.val();
                 const keys = Object.keys(data);
-                const firstKey = keys[0]; // A chave mais antiga do lote (para paginação)
+                const firstKey = keys[0];
                 
-                const postsList = keys.map(key => ({
-                    id: key,
-                    ...data[key],
-                    likesCount: data[key].likes ? Object.keys(data[key].likes).length : 0,
-                    hasLiked: data[key].likes ? !!data[key].likes[user.id] : false,
-                    commentsCount: data[key].comments ? Object.keys(data[key].comments).length : 0,
-                })).filter(p => p.type !== 'story');
+                const postsList = await processPostsWithUsers(data);
 
                 if (keys.length < 30) setHasMorePosts(false);
                 setLastPostKey(firstKey);
@@ -130,7 +205,7 @@ function SocialNetwork({ user, onClose }) {
                     const sorted = await window.sortFeedByAlgorithm(user.id, postsList);
                     setPosts(sorted);
                 } else {
-                    setPosts(postsList.reverse()); // Mais recentes primeiro
+                    setPosts(postsList.reverse());
                 }
             } else {
                 setPosts([]);
@@ -958,7 +1033,7 @@ function SocialNetwork({ user, onClose }) {
                         src={user.avatar || 'https://via.placeholder.com/150'} 
                         alt="Avatar" 
                         className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => window.location.href = `channel.html?uid=${user.id}`}
+                        onClick={() => window.location.href = `canal.html?uid=${user.id}`}
                     />
                     <h1 className={`text-lg font-bold text-primary hidden sm:block`}>
                         Phantora
@@ -966,6 +1041,9 @@ function SocialNetwork({ user, onClose }) {
                 </div>
                 
                 <div className="flex items-center gap-1 sm:gap-2">
+                    <button onClick={() => setShowDiscovery(true)} className={`p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-accent transition-colors`} title="Descobrir Pessoas">
+                        <div className="icon-users text-xl"></div>
+                    </button>
                     <button onClick={() => window.location.href = 'search.html'} className={`p-2 hidden sm:block rounded-full text-text-secondary hover:bg-tertiary hover:text-text-primary transition-colors`} title="Pesquisar">
                         <div className="icon-search text-xl"></div>
                     </button>
@@ -978,13 +1056,14 @@ function SocialNetwork({ user, onClose }) {
                 </div>
             </header>
 
-            {/* Floating Bottom Navigation */}
-            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center gap-8 shadow-lg">
-                <button onClick={() => { setActiveVideoFeed(null); window.scrollTo(0,0); }} className="flex flex-col items-center gap-1 text-accent transition-colors active:scale-95">
+            {/* Navigation Menus */}
+            {/* Mobile Bottom Navigation */}
+            <div className="md:hidden fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center gap-8 shadow-lg">
+                <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'}`}>
                     <div className="icon-house text-2xl"></div>
                 </button>
                 
-                <button onClick={() => window.location.href = 'chat.html'} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95">
+                <button onClick={() => setDesktopView('chat')} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'chat' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'}`}>
                     <div className="icon-message-circle text-2xl"></div>
                 </button>
 
@@ -992,14 +1071,7 @@ function SocialNetwork({ user, onClose }) {
                     if (videoPostsRef.current.length > 0) {
                         const initialList = videoPostsRef.current.map(v => ({...v, uniqueKey: v.id}));
                         setInfiniteFeed(initialList);
-                        
-                        const lastWatched = localStorage.getItem('last_watched_video_id');
                         let startIdx = 0;
-                        if (lastWatched) {
-                            const idx = initialList.findIndex(v => v.id === lastWatched);
-                            if (idx !== -1) startIdx = idx;
-                        }
-                        
                         setActiveVideoFeed(startIdx);
                     } else {
                         showToast("Nenhum vídeo disponível no momento.");
@@ -1007,6 +1079,36 @@ function SocialNetwork({ user, onClose }) {
                 }} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95">
                     <div className="icon-circle-play text-2xl"></div>
                 </button>
+            </div>
+
+            {/* Desktop Right Sidebar */}
+            <div className="hidden md:flex flex-col fixed right-0 top-[60px] bottom-0 w-20 bg-secondary/90 backdrop-blur-lg border-l border-border z-[40] py-6 items-center gap-8 shadow-lg">
+                <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`p-3 rounded-xl transition-all ${desktopView === 'feed' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-tertiary hover:text-text-primary'}`} title="Início">
+                    <div className="icon-house text-2xl"></div>
+                </button>
+                
+                <button onClick={() => setDesktopView('chat')} className={`p-3 rounded-xl transition-all ${desktopView === 'chat' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-tertiary hover:text-text-primary'}`} title="Mensagens">
+                    <div className="icon-message-circle text-2xl"></div>
+                </button>
+
+                <button onClick={() => {
+                    if (videoPostsRef.current.length > 0) {
+                        setDesktopView('feed');
+                        const initialList = videoPostsRef.current.map(v => ({...v, uniqueKey: v.id}));
+                        setInfiniteFeed(initialList);
+                        setActiveVideoFeed(0);
+                    } else {
+                        showToast("Nenhum vídeo disponível no momento.");
+                    }
+                }} className="p-3 rounded-xl text-text-secondary hover:bg-tertiary hover:text-text-primary transition-all" title="Vídeos">
+                    <div className="icon-circle-play text-2xl"></div>
+                </button>
+
+                <div className="mt-auto">
+                    <button onClick={() => setShowPostCreator(true)} className="p-3 rounded-xl bg-accent text-white hover:bg-accent-hover transition-all shadow-accent" title="Novo Post">
+                        <div className="icon-plus text-2xl"></div>
+                    </button>
+                </div>
             </div>
             
             {showSettings && window.SettingsMenu && (
@@ -1084,10 +1186,15 @@ function SocialNetwork({ user, onClose }) {
                 </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 max-w-2xl mx-auto w-full space-y-6" onScroll={handleScroll}>
-                
-                {/* Search Redirect Button */}
-                <div className={`p-4 ${cardBg} mb-6`}>
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 max-w-full md:max-w-4xl mx-auto w-full space-y-6" onScroll={desktopView === 'feed' ? handleScroll : undefined}>
+                {desktopView === 'chat' ? (
+                    <div className="bg-secondary rounded-2xl border border-border h-[80vh] overflow-hidden shadow-lg mt-4">
+                        {window.ChatPage ? <window.ChatPage user={user} embedded={true} /> : <div className="text-center p-8 text-text-muted">Carregando mensagens...</div>}
+                    </div>
+                ) : (
+                    <>
+                        {/* Search Redirect Button */}
+                        <div className={`p-4 ${cardBg} mb-6 max-w-2xl mx-auto`}>
                     <button onClick={() => setShowPostCreator(true)} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary text-text-muted hover:border-border-active transition-colors">
                         <div className="icon-plus text-accent text-lg"></div>
                         <span className="font-semibold text-text-primary">Criar nova publicação...</span>
@@ -1371,6 +1478,8 @@ function SocialNetwork({ user, onClose }) {
                         Você chegou ao fim do feed.
                     </div>
                 )}
+                    </>
+                )}
             </div>
 
             {/* Fullscreen TikTok Style Video Feed */}
@@ -1514,6 +1623,11 @@ function SocialNetwork({ user, onClose }) {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Friend Discovery Modal */}
+            {showDiscovery && window.FriendSwipe && (
+                <window.FriendSwipe user={user} onClose={() => setShowDiscovery(false)} />
             )}
 
             {/* Modal de Criação de Post (PostCreator) */}

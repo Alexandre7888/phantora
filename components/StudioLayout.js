@@ -5,7 +5,8 @@ function StudioLayout() {
     const navItems = [
         { id: 'dashboard', label: 'Painel', icon: 'layout-dashboard' },
         { id: 'contents', label: 'Seus conteúdos', icon: 'folder-open' },
-        { id: 'music', label: 'Música', icon: 'music' }
+        { id: 'music', label: 'Música', icon: 'music' },
+        { id: 'subscriptions', label: 'Assinaturas', icon: 'star' }
     ];
 
     const renderContent = () => {
@@ -27,6 +28,8 @@ function StudioLayout() {
                 return <StudioMyContents user={currentUser} />;
             case 'music':
                 return <StudioMusicLibrary />;
+            case 'subscriptions':
+                return <StudioSubscriptions db={window.firebaseDB} user={currentUser} />;
             default:
                 return (
                     <div className="p-8 flex flex-col items-center justify-center h-full text-gray-400">

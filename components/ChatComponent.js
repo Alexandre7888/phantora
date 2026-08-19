@@ -504,7 +504,7 @@ function ChatComponent({ user, onClose }) {
                                 {mutualFriends.map(friend => (
                                     <div 
                                         key={friend.id} 
-                                        onClick={() => setActiveChat(friend)}
+                                        onClick={() => window.location.href = `chat.html?chat=${friend.id}`}
                                         className="flex items-center gap-4 p-3 rounded-xl hover:bg-tertiary cursor-pointer transition-colors"
                                     >
                                         <img src={friend.avatar} className="w-14 h-14 rounded-full object-cover border border-border" />

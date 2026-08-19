@@ -122,8 +122,6 @@ function PostCreator({ user, onClose, onUploadComplete }) {
                 const postFinalType = postType === 'carousel' ? 'carousel' : postType === 'video' ? 'video' : postType === 'poll' ? 'poll' : 'text';
                 const newPost = {
                     authorId: uid,
-                    authorName: user.name || 'Usuário',
-                    authorAvatar: user.avatar || '',
                     type: postFinalType,
                     title: title.trim(),
                     content: description.trim(),

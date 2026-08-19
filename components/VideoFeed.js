@@ -24,6 +24,7 @@ function VideoFeed({
     const [isMuted, setIsMuted] = React.useState(false);
     const [showVideoComments, setShowVideoComments] = React.useState(null);
     const [commentText, setCommentText] = React.useState('');
+    const [subTarget, setSubTarget] = React.useState(null);
     
     const videoContainerRef = React.useRef(null);
     const viewStartTime = React.useRef(null);
@@ -303,7 +304,7 @@ function VideoFeed({
                             <div className="flex-1 pr-16 text-white pointer-events-auto pb-4 max-w-[80%]">
                                 <h3 
                                     className="font-bold text-lg hover:underline cursor-pointer flex items-center gap-2 drop-shadow-md" 
-                                    onClick={() => window.location.href = `channel.html?uid=${vPost.authorId}`}
+                                    onClick={() => window.location.href = `canal.html?uid=${vPost.authorId}`}
                                 >
                                     @{(vPost.authorName || 'usuario').replace(/\s/g, '').toLowerCase()}
                                     {vPost.isVerified && <div className="icon-badge-check text-blue-400 text-sm"></div>}
@@ -329,9 +330,25 @@ function VideoFeed({
                             {/* Botões de Ação (Direita) */}
                             <div className="flex flex-col items-center gap-5 pb-6 pointer-events-auto">
                                 
+                                {/* Assinar Canal */}
+                                {vPost.authorId !== user.id && (
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSubTarget({ id: vPost.authorId, name: vPost.authorName, avatar: vPost.authorAvatar });
+                                        }}
+                                        className="flex flex-col items-center gap-1 active:scale-95 transition-transform"
+                                    >
+                                        <div className="w-12 h-[72px] bg-sky-400 hover:bg-sky-500 rounded-full flex flex-col items-center justify-center shadow-lg border-2 border-white/20">
+                                            <div className="icon-star text-white text-xl mb-1"></div>
+                                            <span className="text-[10px] font-bold text-white uppercase tracking-tighter" style={{writingMode: 'vertical-rl'}}>Assinar</span>
+                                        </div>
+                                    </button>
+                                )}
+
                                 {/* Avatar do Autor com botão de seguir */}
                                 <div className="relative mb-4">
-                                    <div className="w-12 h-12 rounded-full border-2 border-white p-[2px] bg-white/20 backdrop-blur-sm cursor-pointer shadow-lg" onClick={() => window.location.href = `channel.html?uid=${vPost.authorId}`}>
+                                    <div className="w-12 h-12 rounded-full border-2 border-white p-[2px] bg-white/20 backdrop-blur-sm cursor-pointer shadow-lg" onClick={() => window.location.href = `canal.html?uid=${vPost.authorId}`}>
                                         <img src={vPost.authorAvatar || 'https://via.placeholder.com/150'} className="w-full h-full rounded-full object-cover"/>
                                     </div>
                                     {vPost.authorId !== user.id && !following[vPost.authorId] && (
@@ -378,7 +395,7 @@ function VideoFeed({
                                     <button onClick={(e) => { e.stopPropagation(); handleShare(vPost); }} className="w-11 h-11 rounded-full flex items-center justify-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] active:scale-90 transition-transform">
                                         <div className="icon-share-2 text-[26px]"></div>
                                     </button>
-                                    <span className="text-xs text-white font-semibold drop-shadow-md text-center w-full block mt-1">Share</span>
+                                    <span className="text-xs text-white font-semibold drop-shadow-md text-center w-full block mt-1">Compartilhar</span>
                                 </div>
 
                                 {/* Disco de música girando */}
@@ -415,6 +432,17 @@ function VideoFeed({
                     </div>
                 ))}
             </div>
+
+            {/* Modal de Assinatura */}
+            {subTarget && (
+                <window.ChannelSubscription
+                    creatorId={subTarget.id}
+                    creatorName={subTarget.name}
+                    creatorAvatar={subTarget.avatar}
+                    db={window.firebaseDB}
+                    onClose={() => setSubTarget(null)}
+                />
+            )}
 
             {/* Overlay de Comentários do Vídeo (Bottom Sheet) */}
             {showVideoComments && (

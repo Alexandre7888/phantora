@@ -128,7 +128,7 @@ function SearchPage({ user }) {
                                 <h3 className="font-bold text-gray-800 mb-3 px-1 text-sm uppercase tracking-wider">Usuários</h3>
                                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                                     {results.users.map(u => (
-                                        <div key={u.id} onClick={() => window.location.href = `channel.html?uid=${u.id}`} className="flex items-center gap-3 p-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 cursor-pointer">
+                                        <div key={u.id} onClick={() => window.location.href = `canal.html?uid=${u.id}`} className="flex items-center gap-3 p-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 cursor-pointer">
                                             {u.avatar ? <img src={u.avatar} className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">{u.name.charAt(0).toUpperCase()}</div>}
                                             <div>
                                                 <p className="font-bold text-gray-800">{u.name}</p>

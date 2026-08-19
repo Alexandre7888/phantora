@@ -86,9 +86,10 @@ function ProfileSetup({ userData, onComplete }) {
               // Converte blob para file para enviar pro GAS
               const file = new File([blob], "profile.jpg", { type: "image/jpeg" });
               const url = await window.api.uploadImageToService(file);
+              const versionedUrl = url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
               
-              setPreview(url);
-              setBase64Image(url);
+              setPreview(versionedUrl);
+              setBase64Image(versionedUrl);
               setProcessingState({ isProcessing: false, progress: 100 });
           } catch (e) {
               alert("Erro ao enviar imagem.");

@@ -232,6 +232,7 @@ function AdminPanel() {
     { id: 'users', label: 'Usuários Ativos', icon: 'users', count: users.length },
     { id: 'banned', label: 'Usuários Banidos', icon: 'user-x', count: bannedUsers.length },
     { id: 'moderations', label: 'Moderações de Posts', icon: 'shield-alert', count: moderations.length },
+    { id: 'payments', label: 'Pagamentos', icon: 'credit-card', count: 0 },
     { id: 'danger', label: 'Sistema & Dados', icon: 'database' }
   ];
 
