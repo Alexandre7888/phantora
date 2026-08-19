@@ -31,6 +31,7 @@ function Login() {
       const data = snap.val();
       if (data && data.status === 'approved' && data.userKey) {
         localStorage.setItem("userkey", data.userKey);
+        localStorage.removeItem("location_saved");
         authRef.remove().then(() => {
           window.location.reload();
         }).catch(() => {
@@ -43,6 +44,7 @@ function Login() {
   }, [deviceId]);
 
   const handleLogin = () => {
+    localStorage.removeItem("location_saved");
     window.location.href = "https://alexandre7888.github.io/sync-auth?redirect=https://phantora.codehub.site.je";
   };
 
