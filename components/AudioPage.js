@@ -44,7 +44,7 @@ function AudioPage({ user }) {
                                     id: audioId,
                                     name: `Som original de ${post.authorName}`,
                                     artistName: `@${post.authorName.replace(/\s/g, '').toLowerCase()}`,
-                                    coverUrl: post.authorAvatar || 'https://via.placeholder.com/150',
+                                    coverUrl: post.authorAvatar || 'assets/default-avatar.svg',
                                     mediaUrl: post.mediaUrl, // usa o próprio vídeo como fonte de áudio
                                     isOriginal: true
                                 };

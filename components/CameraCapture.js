@@ -920,11 +920,11 @@ function CameraCapture({ onCapture, onClose, photoOnly = false, embedded = false
                                     >
                                         <div className="w-14 h-14 rounded-2xl overflow-hidden border border-white/10 flex-shrink-0">
                                             <img 
-                                                src={audio.coverUrl || 'https://via.placeholder.com/150'} 
+                                                src={audio.coverUrl || 'assets/default-avatar.svg'}
                                                 className="w-full h-full object-cover"
                                                 alt={audio.name}
                                                 onError={(e) => {
-                                                    e.target.src = 'https://via.placeholder.com/150';
+                                                    e.target.src = 'assets/default-avatar.svg';
                                                 }}
                                             />
                                         </div>

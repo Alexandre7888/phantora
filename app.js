@@ -164,12 +164,6 @@ function App() {
                 if (!firebaseData || (!firebaseData.avatar && !firebaseData.profilePicture)) {
                   setAppState('profile_setup');
                 } else {
-                  if (firebaseData.profilePicture && !firebaseData.avatar) {
-                      window.firebaseDB.ref(`users/${uid}/avatar`).set(firebaseData.profilePicture);
-                      combinedData.avatar = firebaseData.profilePicture;
-                      setUserData(combinedData);
-                      window.currentUserData = combinedData;
-                  }
                   // Register OneSignal Listener if logged in
                   if (window.OneSignalDeferred) {
                     window.OneSignalDeferred.push(async function(OneSignal) {

@@ -1131,7 +1131,7 @@ function TVApp() {
                             
                             <div className="absolute right-0 top-0 bottom-0 w-32 bg-black/60 backdrop-blur-md flex flex-col items-center justify-end py-12 gap-8 border-l border-white/10 z-30 rounded-r-[2rem]">
                                 <div className="relative">
-                                    <img src={posts[activeVideoFeed]?.authorAvatar || 'https://via.placeholder.com/150'} className="w-14 h-14 rounded-full border-2 border-white object-cover" />
+                                    <img src={posts[activeVideoFeed]?.authorAvatar || 'assets/default-avatar.svg'} className="w-14 h-14 rounded-full border-2 border-white object-cover" />
                                 </div>
                                 
                                 <button className="tv-focusable flex flex-col items-center gap-2 group" onClick={() => handleSocialLike(posts[activeVideoFeed].id, posts[activeVideoFeed].hasLiked)}>
@@ -1214,7 +1214,7 @@ function TVApp() {
                                     </h1>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                                         {chats.map(chat => {
-                                            const chatAvatar = chat.type === 'community' ? null : (chat.avatar || 'https://via.placeholder.com/150');
+                                            const chatAvatar = chat.type === 'community' ? null : (chat.avatar || 'assets/default-avatar.svg');
                                             const isLocked = lockedChats[chat.id] && !unlockedForTv[chat.id];
                                             return (
                                                 <div key={chat.id} className="tv-focusable bg-gray-800 border border-gray-700 p-6 rounded-2xl flex items-center gap-6 cursor-pointer hover:bg-gray-700 transition-colors relative" onClick={() => {

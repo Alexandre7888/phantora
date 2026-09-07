@@ -74,7 +74,7 @@ function ChannelSubscription({ creatorId, creatorName, creatorAvatar, onClose, d
                 
                 <div className="p-6 overflow-y-auto">
                     <div className="flex flex-col items-center mb-6 text-center">
-                        <img src={creatorAvatar || 'https://via.placeholder.com/150'} className="w-24 h-24 rounded-full mb-3 object-cover border-4 border-[#252530]" />
+                        <img src={creatorAvatar || 'assets/default-avatar.svg'} className="w-24 h-24 rounded-full mb-3 object-cover border-4 border-[#252530]" />
                         <h4 className="text-white text-xl font-bold">{creatorName}</h4>
                     </div>
 

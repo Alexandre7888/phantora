@@ -274,7 +274,7 @@ function Dashboard({ userData, onLogout }) {
                     <div key={h.uid} className="snap-start shrink-0 w-64 bg-gradient-to-b from-amber-50 to-white border border-amber-200 rounded-2xl p-5 flex flex-col items-center text-center shadow-sm relative overflow-hidden">
                       <div className="absolute top-0 w-full h-1 bg-gradient-to-r from-amber-400 to-orange-500"></div>
                       <div className="relative mb-3">
-                        <img src={h.profilePicture || 'https://via.placeholder.com/150'} alt="Profile" className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md" />
+                        <img src={h.avatar || h.profilePicture || 'assets/default-avatar.svg'} alt="Profile" className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md" />
                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full border-2 border-white shadow-sm">
                           PRO
                         </div>
@@ -308,7 +308,7 @@ function Dashboard({ userData, onLogout }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       {suggestions.map(s => (
                         <div key={s.uid} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
-                          <img src={s.profilePicture || 'https://via.placeholder.com/150'} alt="Profile" className="w-12 h-12 rounded-full object-cover" />
+                          <img src={s.avatar || s.profilePicture || 'assets/default-avatar.svg'} alt="Profile" className="w-12 h-12 rounded-full object-cover" />
                           <div className="flex-1 min-w-0">
                             <h4 className="font-bold text-gray-900 truncate">{s.name || s.username}</h4>
                             <p className="text-sm text-gray-500 truncate">@{s.username}</p>

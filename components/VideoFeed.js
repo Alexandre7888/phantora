@@ -349,7 +349,7 @@ function VideoFeed({
                                 {/* Avatar do Autor com botão de seguir */}
                                 <div className="relative mb-4">
                                     <div className="w-12 h-12 rounded-full border-2 border-white p-[2px] bg-white/20 backdrop-blur-sm cursor-pointer shadow-lg" onClick={() => window.location.href = `canal.html?uid=${vPost.authorId}`}>
-                                        <img src={vPost.authorAvatar || 'https://via.placeholder.com/150'} className="w-full h-full rounded-full object-cover"/>
+                                        <img src={vPost.authorAvatar || 'assets/default-avatar.svg'} className="w-full h-full rounded-full object-cover"/>
                                     </div>
                                     {vPost.authorId !== user.id && !following[vPost.authorId] && (
                                         <button 
@@ -401,7 +401,7 @@ function VideoFeed({
                                 {/* Disco de música girando */}
                                 <div className="mt-4 animate-spin" style={{ animationDuration: '4s' }}>
                                     <div className="w-11 h-11 rounded-full bg-gray-900 border-[8px] border-gray-800 flex items-center justify-center overflow-hidden shadow-[0_0_15px_rgba(0,0,0,0.8)]">
-                                        <img src={vPost.authorAvatar || 'https://via.placeholder.com/150'} className="w-full h-full object-cover opacity-80" />
+                                        <img src={vPost.authorAvatar || 'assets/default-avatar.svg'} className="w-full h-full object-cover opacity-80" />
                                     </div>
                                 </div>
                             </div>
@@ -416,7 +416,7 @@ function VideoFeed({
                                     className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-full pl-2 pr-4 py-2.5 flex items-center gap-3 shadow-[0_0_20px_rgba(124,58,237,0.4)] transform transition-transform active:scale-95 disabled:opacity-90 border border-white/20 backdrop-blur-md"
                                 >
                                     <div className="w-8 h-8 rounded-full overflow-hidden border border-white/30">
-                                        <img src={quickShareUserAvatar || 'https://via.placeholder.com/150'} className="w-full h-full object-cover" />
+                                        <img src={quickShareUserAvatar || 'assets/default-avatar.svg'} className="w-full h-full object-cover" />
                                     </div>
                                     <span className="font-bold text-sm tracking-wide">
                                         {isQuickSharing ? 'Enviando...' : quickShareSuccess ? 'Enviado!' : 'Enviar'}

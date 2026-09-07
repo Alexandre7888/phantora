@@ -110,7 +110,7 @@ function FriendSwipe({ user, onClose }) {
             {currentProfile ? (
                 <div className="bg-secondary rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl relative">
                     <img 
-                        src={currentProfile.profilePicture || 'https://via.placeholder.com/400'} 
+                        src={currentProfile.avatar || currentProfile.profilePicture || 'assets/default-avatar.svg'}
                         className="w-full h-80 object-cover"
                     />
                     <div className="p-6 text-center">

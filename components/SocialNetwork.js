@@ -145,7 +145,7 @@ function SocialNetwork({ user, onClose }) {
         fetchStories();
 
         const fetchUserData = async (uid) => {
-            if (!uid) return { name: 'Usuário', avatar: 'https://via.placeholder.com/150', username: 'usuario' };
+            if (!uid) return { name: 'Usuário', avatar: 'assets/default-avatar.svg', username: 'usuario' };
             if (window._userCache && window._userCache[uid]) return window._userCache[uid];
             
             try {
@@ -153,7 +153,7 @@ function SocialNetwork({ user, onClose }) {
                 const uData = snap.val() || {};
                 const result = {
                     name: uData.name || 'Usuário',
-                    avatar: uData.avatar || uData.profilePicture || 'https://via.placeholder.com/150',
+                    avatar: uData.avatar || uData.profilePicture || 'assets/default-avatar.svg',
                     username: uData.username || (uData.name || 'usuario').toLowerCase().replace(/\s/g, ''),
                     isVerified: !!uData.isVerified
                 };
@@ -161,7 +161,7 @@ function SocialNetwork({ user, onClose }) {
                 window._userCache[uid] = result;
                 return result;
             } catch(e) {
-                return { name: 'Usuário', avatar: 'https://via.placeholder.com/150', username: 'usuario' };
+                return { name: 'Usuário', avatar: 'assets/default-avatar.svg', username: 'usuario' };
             }
         };
 
@@ -1082,7 +1082,7 @@ function SocialNetwork({ user, onClose }) {
             <header className={`${headerBg} px-4 py-3 flex items-center justify-between sticky top-0 z-10 transition-colors`}>
                 <div className="flex items-center gap-3">
                     <img 
-                        src={user.avatar || 'https://via.placeholder.com/150'} 
+                        src={user.avatar || 'assets/default-avatar.svg'}
                         alt="Avatar" 
                         className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer hover:opacity-80 transition-opacity shrink-0"
                         onClick={() => window.location.href = `canal.html?uid=${user.id}`}
@@ -1208,7 +1208,7 @@ function SocialNetwork({ user, onClose }) {
                         {stories.map((story, i) => (
                             <div key={story.id} onClick={() => setActiveStory(i)} className="flex flex-col items-center gap-1 cursor-pointer group flex-shrink-0">
                                 <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-indigo-600">
-                                    <img src={story.authorAvatar || 'https://via.placeholder.com/150'} className="w-full h-full rounded-full object-cover border-2 border-[var(--dark-surface)] group-hover:scale-105 transition-transform" />
+                                    <img src={story.authorAvatar || 'assets/default-avatar.svg'} className="w-full h-full rounded-full object-cover border-2 border-[var(--dark-surface)] group-hover:scale-105 transition-transform" />
                                 </div>
                                 <span className={`text-xs font-medium max-w-[64px] truncate text-text-primary`}>{(story.authorName || 'Usuário').split(' ')[0]}</span>
                             </div>
@@ -1228,7 +1228,7 @@ function SocialNetwork({ user, onClose }) {
                         ))}
                     </div>
                     <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
-                        <img src={stories[activeStory].authorAvatar || 'https://via.placeholder.com/150'} className="w-10 h-10 rounded-full border border-white" />
+                        <img src={stories[activeStory].authorAvatar || 'assets/default-avatar.svg'} className="w-10 h-10 rounded-full border border-white" />
                         <span className="text-white font-bold">{stories[activeStory].authorName || 'Usuário'}</span>
                         <span className="text-white/70 text-xs">{getRelativeTime(stories[activeStory].timestamp || Date.now())}</span>
                     </div>
@@ -1262,7 +1262,7 @@ function SocialNetwork({ user, onClose }) {
                             <button onClick={() => setSelectedUser(null)} className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 rounded-full">
                                 <div className="icon-x text-xl"></div>
                             </button>
-                            <img src={selectedUser.avatar || 'https://via.placeholder.com/150'} alt="Profile" className="w-24 h-24 rounded-full object-cover mx-auto border-4 border-indigo-100 mb-4" />
+                            <img src={selectedUser.avatar || 'assets/default-avatar.svg'} alt="Profile" className="w-24 h-24 rounded-full object-cover mx-auto border-4 border-indigo-100 mb-4" />
                             <h3 className="text-xl font-bold">{selectedUser.name || 'Usuário'}</h3>
                             <p className={`text-sm ${textMuted} mb-6`}>@{(selectedUser.name || 'usuario').toLowerCase().replace(/\s/g, '')}</p>
                             

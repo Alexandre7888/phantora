@@ -42,7 +42,7 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
                     contactsList.push({
                         id: fid,
                         name: userContacts[fid].name || 'Usuário',
-                        avatar: userContacts[fid].avatar || 'https://via.placeholder.com/150'
+                        avatar: userContacts[fid].avatar || 'assets/default-avatar.svg'
                     });
                 }
                 
@@ -146,7 +146,7 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
                                 <div>
                                     <span className="font-medium text-gray-700 text-sm block mb-2">Seu Perfil Público</span>
                                     <div className="flex items-center gap-4">
-                                        <img src={forcedAvatar || window.currentUserData?.avatar || 'https://via.placeholder.com/150'} className="w-14 h-14 rounded-full object-cover border border-gray-200" />
+                                        <img src={forcedAvatar || window.currentUserData?.avatar || 'assets/default-avatar.svg'} className="w-14 h-14 rounded-full object-cover border border-gray-200" />
                                         <div className="flex-1">
                                             <h4 className="font-bold text-gray-800 text-sm">{window.currentUserData?.name || 'Usuário'}</h4>
                                             <p className="text-xs text-gray-500 mb-2">@{window.currentUserData?.username || 'usuario'}</p>

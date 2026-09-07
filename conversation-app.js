@@ -40,7 +40,7 @@ function App() {
                         setUser({
                             id: publicId,
                             name: codeHubData.nome || 'Usuário',
-                            avatar: 'https://via.placeholder.com/150'
+                            avatar: 'assets/default-avatar.svg'
                         });
                         setLoading(false);
                         return;

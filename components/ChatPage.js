@@ -32,7 +32,7 @@ function ChatPage({ user, embedded = false }) {
                         mutuals.push({
                             id: uid,
                             name: uData.name || uData.username || 'Usuário',
-                            avatar: uData.profilePicture || 'https://via.placeholder.com/150',
+                            avatar: uData.avatar || uData.profilePicture || 'assets/default-avatar.svg',
                             username: uData.username || ''
                         });
                     }
@@ -81,7 +81,7 @@ function ChatPage({ user, embedded = false }) {
                             id: uid,
                             name: u.name || u.username || 'Usuário',
                             username: u.username || '',
-                            avatar: u.profilePicture || 'https://via.placeholder.com/150'
+                            avatar: u.avatar || u.profilePicture || 'assets/default-avatar.svg'
                         });
                     }
                 });
