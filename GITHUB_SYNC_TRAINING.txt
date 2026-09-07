@@ -1,0 +1,31 @@
+ROTINA DE PUBLICAÇÃO DO PHANTORA NO MAIN
+=========================================
+
+Preferência do projeto
+----------------------
+As publicações devem ser feitas somente na branch `main`. Não é necessário
+usar um servidor Linux, terminal Linux ou servidor HTTP local para esta rotina.
+
+Checklist para cada publicação
+------------------------------
+1. Abra a versão pública do Phantora no navegador e confira se ela está
+   funcionando antes da alteração.
+2. Faça a alteração necessária e reveja os arquivos que serão publicados.
+3. Confira se não há senhas, chaves privadas, tokens ou dados pessoais nos
+   arquivos antes de enviá-los.
+4. Envie a alteração diretamente para a branch `main` do repositório
+   `phantora` com uma mensagem de commit clara.
+5. Depois que a publicação terminar, abra novamente a versão pública no
+   navegador e confirme que a mudança funciona de verdade.
+
+Regra de publicação
+-------------------
+O destino de cada publicação é `main`. Não criar publicação em outra branch,
+salvo se o responsável pelo projeto pedir explicitamente.
+
+Configuração necessária
+------------------------
+Para publicar no GitHub, este computador precisa estar conectado ao
+repositório `phantora` e ter autorização para enviar alterações para `main`.
+Sem a URL correta do repositório e as credenciais do proprietário, não é
+possível realizar uma publicação.
