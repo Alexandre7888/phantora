@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arquivo de Teste - Phantora</title>
+    <link rel="stylesheet" href="global.css">
+    <style>
+        body { font-family: Arial, Helvetica, sans-serif; background: #f9fafb; margin: 0; padding: 40px 16px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 24px; margin-bottom: 8px; }
+        .sub { color: #666; margin-bottom:  24px; }
+        .resumo { padding: 16px; border-radius: 8px; margin-bottom:  20px; font-weight: 600; }
+        .resumo.ok { background: #dcfce7; border:  1px solid #bbf7d0; color: #166534; }
+        .resumo.erro { background: #fee2e2; border:  1px solid #fecaca; color: #991b1b; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius:  8px; overflow: hidden; box-shadow:  0 1px 3px rgba(0,0,0,0.1); }
+        th, td { text-align: left; padding:  10px 12px; border-bottom:  1px solid #eee; font-size: 14px; }
+        th { background: #f3f4f6; font-weight: 600; }
+        td.pass { color: #16a34a; font-weight: 600; }
+        td.fail { color: #dc2626; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pagina de Testes do Phantora</h1>
+        <p class="sub">Validacao automatizada de funcoes utilitarias do app - executa no navegador, sem dependencias externas.</p>
+        <div id="resumo" class="resumo">Executando testes...</div>
+        <table>
+            <thead>
+                <tr><th>#</th><th>Teste</th><th>Esperado</th><th>Resultado</th></tr>
+            </thead>
+            <tbody id="corpo"></tbody>
+        </table>
+    </div>
+
+    <script src="utils/censor.js"></script>
+    <script src="utils/spamControl.js"></script>
+
+    <script>
+        (function() {
+            var tbody = document.getElementById('corpo');
+            var resumo = document.getElementById('resumo');
+            var resultados = [];
+            var passaram = 0;
+            var falharam = 0;
+
+            function testar(nome, esperado, obtido) {
+                var ok = JSON.stringify(esperado) === JSON.stringify(obtido);
+                if (ok) { passaram++; } else { falharam++; }
+                resultados.push({ nome: nome, esperado: JSON.stringify(esperado), obtido: JSON.stringify(obtido), ok: ok });
+            }
+
+            function exibir() {
+                resultados.forEach(function(r, i) {
+                    var tr = document.createElement('tr');
+                    tr.innerHTML =
+                        '<td>' + (i +  1) + '</td>' +
+                        '<td>' + r.nome + '</td>' +
+                        '<td>' + r.esperado + '</td>' +
+                        '<td class="' + (r.ok ? 'pass' : 'fail') + '">' + (r.ok ? 'PASSOU' : 'FALHOU (' + r.obtido + ')') + '</td>';
+                    tbody.appendChild(tr);
+                });
+                resumo.textContent = passaram + ' de ' + (passaram + falharam) + ' testes passaram.';
+                resumo.className = 'resumo ' + (falharam === 0 ? 'ok' : 'erro');
+                if (falharam > 0) {
+                    resumo.textContent += ' Alguns testes falharam.';
+                }
+            }
+
+            testar('CensorUtils censura bot_', '***', window.CensorUtils.censor('bot_qualquercoisa'));
+            testar('CensorUtils mantem texto normal', 'Ola, tudo bem?', window.CensorUtils.censor('Ola, tudo bem?'));
+            testar('CensorUtils ignora texto vazio', '', window.CensorUtils.censor(''));
+            testar('CensorUtils ignora null', null, window.CensorUtils.censor(null));
+            testar('CensorUtils e case-insensitive', 'veja ***', window.CensorUtils.censor('veja BOT_exemplo'));
+            testar('CensorUtils mantem resto da frase', 'siga *** no chat', window.CensorUtils.censor('siga bot_admin no chat'));
+
+            var spam = new SpamController();
+            var spamOk = true;
+            for (var i = 0; i < 5; i++) {
+                if (spam.checkSpam('texto').blocked) { spamOk = false; }
+            }
+            testar('SpamController permite 5 mensagens', true, spamOk);
+            testar('SpamController bloqueia a 6a mensagem', true, spam.checkSpam('texto').blocked);
+
+            var spamAudio = new SpamController();
+            var audioOk = true;
+            for (var i =  0; i < 3; i++) {
+                if (spamAudio.checkSpam('audio').blocked) { audioOk = false; }
+            }
+            testar('SpamController permite 3 audios', true, audioOk);
+            testar('SpamController bloqueia o 4o audio', true, spamAudio.checkSpam('audio').blocked);
+
+            var banido = new SpamController();
+            banido.banUser(15);
+            testar('SpamController bloqueia usuario banido', true, banido.checkSpam('texto').blocked);
+            testar('SpamController bloqueia usuario banido (audio)', true, banido.checkSpam('audio').blocked);
+
+            exibir();
+        })();
+    </script>
+</body>
+</html>
