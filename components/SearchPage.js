@@ -168,7 +168,7 @@ function SearchPage({ user }) {
                                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                                     {results.audios.map(audio => (
                                         <div key={audio.id} onClick={() => window.location.href = `audio.html?id=${audio.id}`} className="flex items-center gap-3 p-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 cursor-pointer">
-                                            <img src={audio.coverUrl || 'https://via.placeholder.com/150'} className="w-12 h-12 rounded-md object-cover border border-gray-200" />
+                                            <img src={audio.coverUrl || 'assets/default-avatar.svg'} className="w-12 h-12 rounded-md object-cover border border-gray-200" />
                                             <div className="flex-1">
                                                 <p className="font-bold text-gray-800">{audio.name}</p>
                                                 <p className="text-xs text-gray-500">{audio.artistName}</p>

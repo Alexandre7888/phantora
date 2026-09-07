@@ -53,7 +53,7 @@ function ChatComponent({ user, onClose }) {
                         mutuals.push({
                             id: uid,
                             name: users[uid].chatNickname || users[uid].name || users[uid].username || 'Usuário',
-                            avatar: canSeeProfile ? (users[uid].profilePicture || 'https://via.placeholder.com/150') : 'https://via.placeholder.com/150'
+                            avatar: canSeeProfile ? (users[uid].profilePicture || users[uid].avatar || 'assets/default-avatar.svg') : 'assets/default-avatar.svg'
                         });
                     }
                 }
@@ -81,7 +81,7 @@ function ChatComponent({ user, onClose }) {
                     setActiveChat({
                         id: chatId,
                         name: u.chatNickname || u.name || u.username || 'Usuário',
-                        avatar: canSeeProfile ? (u.profilePicture || 'https://via.placeholder.com/150') : 'https://via.placeholder.com/150'
+                        avatar: canSeeProfile ? (u.profilePicture || u.avatar || 'assets/default-avatar.svg') : 'assets/default-avatar.svg'
                     });
                 }
             });

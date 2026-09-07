@@ -22,16 +22,7 @@ function UserChannel({ currentUser, channelUserId }) {
                 userRef.on('value', async (snapshot) => {
                     if (snapshot.exists()) {
                         const data = snapshot.val();
-                        let customAvatar = data.avatar || 'https://ui-avatars.com/api/?name=U&background=random';
-                        
-                        try {
-                            const snapAvatar = await db.ref('users/xJLACrZ2fcNGeU8ncmnpm39587g2/avatar').once('value');
-                            if (snapAvatar.exists()) {
-                                customAvatar = snapAvatar.val();
-                            }
-                        } catch (e) {
-                            console.error("Erro ao buscar avatar customizado do Firebase:", e);
-                        }
+                        const customAvatar = data.avatar || data.profilePicture || 'https://ui-avatars.com/api/?name=U&background=random';
 
                         setChannelUser({
                             id: channelUserId,
@@ -207,7 +198,7 @@ function UserChannel({ currentUser, channelUserId }) {
                             src={channelUser.avatar} 
                             alt="Profile" 
                             className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border border-border"
-                            onError={(e) => { e.target.src = 'https://via.placeholder.com/150'; }}
+                            onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
                         />
                         {/* Indicador de Status / Story (opcional visual) */}
                         {isOwnChannel && (
@@ -330,7 +321,7 @@ function UserChannel({ currentUser, channelUserId }) {
                         {communityPosts.map(post => (
                             <div key={post.id} className="bg-secondary rounded-xl p-4 border border-border">
                                 <div className="flex items-center gap-3 mb-3">
-                                    <img src={post.authorAvatar || 'https://via.placeholder.com/150'} className="w-10 h-10 rounded-full object-cover border border-border" />
+                                    <img src={post.authorAvatar || 'assets/default-avatar.svg'} className="w-10 h-10 rounded-full object-cover border border-border" />
                                     <div>
                                         <h4 className="font-bold text-sm text-text-primary">{post.authorName}</h4>
                                         <span className="text-xs text-text-secondary">

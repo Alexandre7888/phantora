@@ -12,14 +12,18 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
     const [forcedAvatar, setForcedAvatar] = React.useState(null);
 
     React.useEffect(() => {
-        if (window.firebaseDB) {
-            const avatarRef = window.firebaseDB.ref('users/xJLACrZ2fcNGeU8ncmnpm39587g2/avatar');
-            avatarRef.on('value', (snap) => {
-                if (snap.exists()) {
-                    setForcedAvatar(snap.val());
-                }
-            });
-        }
+        const uid = window.currentUserData?.uid || window.currentUserData?.id || window.firebaseAuth?.currentUser?.uid;
+        if (!window.firebaseDB || !uid) return undefined;
+
+        const avatarRef = window.firebaseDB.ref(`users/${uid}/avatar`);
+        const listener = avatarRef.on('value', (snap) => {
+            setForcedAvatar(snap.exists() ? snap.val() : null);
+        });
+
+        return () => avatarRef.off('value', listener);
+    }, []);
+
+    React.useEffect(() => {
             
         const fetchData = async () => {
             if (!window.firebaseDB || !window.currentUserData) return;
@@ -38,7 +42,7 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
                     contactsList.push({
                         id: fid,
                         name: userContacts[fid].name || 'Usuário',
-                        avatar: userContacts[fid].avatar || 'https://via.placeholder.com/150'
+                        avatar: userContacts[fid].avatar || 'assets/default-avatar.svg'
                     });
                 }
                 
@@ -142,7 +146,7 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
                                 <div>
                                     <span className="font-medium text-gray-700 text-sm block mb-2">Seu Perfil Público</span>
                                     <div className="flex items-center gap-4">
-                                        <img src={forcedAvatar || window.currentUserData?.avatar || 'https://via.placeholder.com/150'} className="w-14 h-14 rounded-full object-cover border border-gray-200" />
+                                        <img src={forcedAvatar || window.currentUserData?.avatar || 'assets/default-avatar.svg'} className="w-14 h-14 rounded-full object-cover border border-gray-200" />
                                         <div className="flex-1">
                                             <h4 className="font-bold text-gray-800 text-sm">{window.currentUserData?.name || 'Usuário'}</h4>
                                             <p className="text-xs text-gray-500 mb-2">@{window.currentUserData?.username || 'usuario'}</p>

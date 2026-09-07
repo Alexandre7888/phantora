@@ -3,31 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Termos de Uso</title>
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-N4SK68P0DN"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-
-      gtag('config', 'G-N4SK68P0DN');
-    </script>
+    <meta name="theme-color" content="#0a0a0f">
+    <meta name="description" content="Termos de Uso da plataforma Phantora.">
+    <title>Termos de Uso | Phantora</title>
     <link rel="icon" type="image/png" href="https://app.trickle.so/storage/public/images/usr_1b4249e300000001/69bb1bd2-fc92-4f38-85f2-a598ae69ef5e.1000336397">
     <link rel="apple-touch-icon" href="https://app.trickle.so/storage/public/images/usr_1b4249e300000001/69bb1bd2-fc92-4f38-85f2-a598ae69ef5e.1000336397">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        primary: '#0a0a0f',
+                        secondary: '#13131a',
+                        tertiary: '#1a1a24',
+                        border: '#252530',
+                        accent: '#7c3aed',
+                        'accent-light': '#a78bfa',
+                        'text-primary': '#f0f0f5',
+                        'text-secondary': '#a0a0b0'
+                    },
+                    boxShadow: {
+                        card: '0 2px 8px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.03)',
+                        accent: '0 12px 36px rgba(124, 58, 237, 0.25)'
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body class="bg-gray-100 font-sans text-gray-800">
-    <div class="max-w-3xl mx-auto p-8 my-10 bg-white shadow-lg rounded-xl">
-        <h1 class="text-3xl font-bold mb-6 text-indigo-600">Termos de Uso</h1>
-        <div class="space-y-4 leading-relaxed">
-            <p>Bem-vindo ao nosso aplicativo. Ao utilizar nossos serviços, você concorda com os seguintes termos:</p>
-            <h2 class="text-xl font-semibold mt-4">1. Uso da Plataforma</h2>
-            <p>Você concorda em usar a plataforma de forma responsável, respeitando os outros usuários. É proibido o uso de palavras ofensivas nos nomes de usuário (@arroba).</p>
-            <h2 class="text-xl font-semibold mt-4">2. Responsabilidade</h2>
-            <p>Não nos responsabilizamos pelo conteúdo gerado pelos usuários nas conversas.</p>
-        </div>
-        <a href="index.html" class="inline-block mt-8 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Voltar ao Início</a>
+<body class="min-h-screen bg-primary font-sans text-text-primary antialiased">
+    <div class="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+        <div class="absolute -top-48 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-violet-600/20 blur-3xl"></div>
+        <div class="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-indigo-500/10 blur-3xl"></div>
     </div>
+
+    <header class="relative z-10 border-b border-border bg-primary/80 backdrop-blur-xl">
+        <nav class="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6" aria-label="Navegação principal">
+            <a href="index.html" class="group flex items-center gap-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-light">
+                <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-lg font-extrabold text-white shadow-accent transition-transform group-hover:scale-105">P</span>
+                <span class="text-lg font-bold tracking-tight text-white">Phantora</span>
+            </a>
+            <a href="index.html" class="inline-flex items-center gap-2 rounded-lg border border-border bg-tertiary px-3.5 py-2 text-sm font-medium text-text-primary transition hover:border-violet-400/60 hover:bg-violet-500/10 focus:outline-none focus:ring-2 focus:ring-accent-light">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/><path d="M9 12h11"/></svg>
+                Voltar ao início
+            </a>
+        </nav>
+    </header>
+
+    <main class="relative z-10 mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-16">
+        <section class="overflow-hidden rounded-3xl border border-border bg-secondary/90 shadow-card">
+            <div class="border-b border-border bg-gradient-to-br from-violet-500/15 via-secondary to-secondary px-6 py-10 sm:px-10 sm:py-14">
+                <p class="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-accent-light">
+                    <span class="h-2 w-2 rounded-full bg-violet-400"></span>
+                    Phantora · Legal
+                </p>
+                <h1 class="max-w-2xl text-3xl font-extrabold tracking-tight text-white sm:text-5xl">Termos de Uso</h1>
+                <p class="mt-4 max-w-2xl text-base leading-7 text-text-secondary sm:text-lg">Conheça as regras que ajudam a manter a Phantora segura, respeitosa e acolhedora para toda a comunidade.</p>
+            </div>
+
+            <div class="space-y-8 px-6 py-8 text-[15px] leading-7 text-text-secondary sm:px-10 sm:py-10">
+                <p class="rounded-2xl border border-violet-400/20 bg-violet-500/10 px-5 py-4 text-violet-100">Ao acessar ou utilizar a Phantora, você concorda com estes Termos de Uso.</p>
+
+                <section>
+                    <h2 class="flex items-center gap-3 text-xl font-bold text-white"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/15 text-sm text-accent-light">1</span> Uso da plataforma</h2>
+                    <p class="mt-3">Use a plataforma de forma responsável e respeitosa. Você é responsável pelas atividades realizadas em sua conta e deve respeitar os demais usuários em todas as interações.</p>
+                </section>
+
+                <section>
+                    <h2 class="flex items-center gap-3 text-xl font-bold text-white"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/15 text-sm text-accent-light">2</span> Conduta da comunidade</h2>
+                    <p class="mt-3">Não é permitido utilizar nomes de usuário, publicações ou mensagens que contenham ofensas, assédio, discriminação ou conteúdo que viole direitos de outras pessoas.</p>
+                </section>
+
+                <section>
+                    <h2 class="flex items-center gap-3 text-xl font-bold text-white"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/15 text-sm text-accent-light">3</span> Conteúdo de usuários</h2>
+                    <p class="mt-3">Cada usuário é responsável pelo conteúdo que publica e compartilha. A Phantora pode remover conteúdo ou limitar contas que descumprirem estes termos ou colocarem a comunidade em risco.</p>
+                </section>
+
+                <section>
+                    <h2 class="flex items-center gap-3 text-xl font-bold text-white"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/15 text-sm text-accent-light">4</span> Responsabilidade</h2>
+                    <p class="mt-3">A Phantora não se responsabiliza pelo conteúdo criado por usuários nas conversas e publicações. Caso encontre algo inadequado, utilize os recursos de denúncia disponíveis na plataforma.</p>
+                </section>
+            </div>
+
+            <div class="flex flex-col gap-4 border-t border-border bg-tertiary/70 px-6 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-10">
+                <p class="text-sm text-text-secondary">Dúvidas sobre estes termos? Fale com o suporte da plataforma.</p>
+                <a href="index.html" class="inline-flex items-center justify-center rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-accent transition hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:ring-offset-2 focus:ring-offset-tertiary">Ir para a Phantora</a>
+            </div>
+        </section>
+    </main>
 </body>
 </html>

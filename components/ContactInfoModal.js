@@ -4,7 +4,7 @@ function ContactInfoModal({ isOpen, onClose, otherUser, contactPrivacy, togglePr
     if (!isOpen) return null;
 
     // Se fui bloqueado, não mostro a foto real
-    const displayAvatar = hasBlockedMe ? 'https://via.placeholder.com/150' : otherUser.avatar;
+    const displayAvatar = hasBlockedMe ? 'assets/default-avatar.svg' : (otherUser.avatar || 'assets/default-avatar.svg');
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">

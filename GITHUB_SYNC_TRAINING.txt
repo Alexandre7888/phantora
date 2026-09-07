@@ -1,0 +1,77 @@
+ROTINA DE PUBLICAÇÃO DO PHANTORA NO MAIN
+=========================================
+
+Preferência do projeto
+----------------------
+As publicações devem ser feitas somente na branch `main`. Não é necessário
+usar um servidor Linux, terminal Linux ou servidor HTTP local para esta rotina.
+
+Checklist para cada publicação
+------------------------------
+1. Abra a versão pública do Phantora no navegador e confira se ela está
+   funcionando antes da alteração.
+2. Faça a alteração necessária e reveja os arquivos que serão publicados.
+3. Confira se não há senhas, chaves privadas, tokens ou dados pessoais nos
+   arquivos antes de enviá-los.
+4. Envie a alteração diretamente para a branch `main` do repositório
+   `phantora` com uma mensagem de commit clara.
+5. Depois que a publicação terminar, abra novamente a versão pública no
+   navegador e confirme que a mudança funciona de verdade.
+
+Regra de publicação
+-------------------
+O destino de cada publicação é `main`. Não criar publicação em outra branch,
+salvo se o responsável pelo projeto pedir explicitamente.
+
+Configuração necessária
+------------------------
+Para publicar no GitHub, este computador precisa estar conectado ao
+repositório `phantora` e ter autorização para enviar alterações para `main`.
+Sem a URL correta do repositório e as credenciais do proprietário, não é
+possível realizar uma publicação.
+
+Autenticação real pelo GitHub CLI
+---------------------------------
+Use este procedimento uma única vez no computador que fará as publicações.
+Nunca cole senha, token, código temporário ou chave privada em um arquivo do
+projeto, no chat ou em um commit.
+
+1. Abra um terminal na pasta do projeto e execute:
+
+   gh auth login
+
+2. Escolha `GitHub.com`, depois `HTTPS`, e confirme que deseja autenticar o
+   Git para operações HTTPS.
+3. Escolha a autenticação pelo navegador. O terminal mostrará um código e
+   abrirá (ou informará) a página `https://github.com/login/device`.
+4. No navegador, entre na sua própria conta do GitHub, digite o código e
+   aprove a autorização. O código é temporário e não deve ser compartilhado.
+5. Volte ao terminal e confirme que a autenticação terminou. Verifique com:
+
+   gh auth status
+
+6. Conecte o repositório local à URL que aparece na página do seu repositório
+   no GitHub, substituindo `SEU-USUARIO` pelo seu usuário:
+
+   git remote add origin https://github.com/SEU-USUARIO/phantora.git
+   git remote -v
+
+   Se `origin` já existir e apontar para uma URL errada, use:
+
+   git remote set-url origin https://github.com/SEU-USUARIO/phantora.git
+
+7. Faça primeiro um teste que não envia arquivos:
+
+   git push --dry-run origin HEAD:main
+
+   Se não houver erro, publique de verdade:
+
+   git push -u origin HEAD:main
+
+Permissão para a branch `main`
+-------------------------------
+O login autentica a sua conta, mas não concede permissão automaticamente. A
+conta precisa ser dona do repositório ou receber acesso de escrita em
+`Settings > Collaborators and teams`. Se a branch `main` estiver protegida,
+as regras do repositório também devem permitir o push direto; caso contrário,
+publique por pull request conforme as regras definidas pelo proprietário.
