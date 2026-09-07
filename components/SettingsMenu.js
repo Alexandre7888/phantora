@@ -12,14 +12,18 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
     const [forcedAvatar, setForcedAvatar] = React.useState(null);
 
     React.useEffect(() => {
-        if (window.firebaseDB) {
-            const avatarRef = window.firebaseDB.ref('users/xJLACrZ2fcNGeU8ncmnpm39587g2/avatar');
-            avatarRef.on('value', (snap) => {
-                if (snap.exists()) {
-                    setForcedAvatar(snap.val());
-                }
-            });
-        }
+        const uid = window.currentUserData?.uid || window.currentUserData?.id || window.firebaseAuth?.currentUser?.uid;
+        if (!window.firebaseDB || !uid) return undefined;
+
+        const avatarRef = window.firebaseDB.ref(`users/${uid}/avatar`);
+        const listener = avatarRef.on('value', (snap) => {
+            setForcedAvatar(snap.exists() ? snap.val() : null);
+        });
+
+        return () => avatarRef.off('value', listener);
+    }, []);
+
+    React.useEffect(() => {
             
         const fetchData = async () => {
             if (!window.firebaseDB || !window.currentUserData) return;

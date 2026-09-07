@@ -2,163 +2,149 @@ function DiscoverPage({ user }) {
     const [suggestions, setSuggestions] = React.useState([]);
     const [currentIndex, setCurrentIndex] = React.useState(0);
     const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState('');
     const [toast, setToast] = React.useState(null);
+    const [isActing, setIsActing] = React.useState(false);
 
-    const showToast = (msg) => {
-        setToast(msg);
-        setTimeout(() => setToast(null), 3000);
-    };
+    const showToast = React.useCallback((message, type = 'info') => {
+        setToast({ message, type });
+    }, []);
 
     React.useEffect(() => {
-        const fetchSuggestions = async () => {
-            if (!user) {
-                setLoading(false);
-                return;
-            }
+        if (!toast) return undefined;
+        const timeout = window.setTimeout(() => setToast(null), 3500);
+        return () => window.clearTimeout(timeout);
+    }, [toast]);
 
-            const db = window.firebaseDB;
-            if (!db) return;
-            
-            const userId = user.id || user.uid;
-            if (!userId) {
-                setLoading(false);
-                return;
-            }
-
-            try {
-                const currentUserSnap = await db.ref(`users/${userId}`).once('value').catch(() => null);
-                const currentUserData = currentUserSnap && currentUserSnap.exists() ? currentUserSnap.val() : {};
-                const city = currentUserData.city || user.city;
-                const state = currentUserData.state || user.state;
-
-                if (city && state) {
-                    const locationSnap = await db.ref(`location_users/${state}/${city}`).once('value').catch(() => null);
-                    if (locationSnap && locationSnap.exists()) {
-                        const locationData = locationSnap.val();
-                        const userIds = Object.keys(locationData).filter(id => id && id.trim() !== '' && id !== userId);
-                        
-                        const promises = userIds.map(id => db.ref(`users/${id}`).once('value').catch(() => null));
-                        const snaps = await Promise.all(promises);
-                        
-                        const list = snaps
-                            .filter(snap => snap && snap.exists())
-                            .map(snap => ({ id: snap.key, ...snap.val() }));
-                            
-                        setSuggestions(list.sort(() => 0.5 - Math.random()));
-                    } else {
-                        setSuggestions([]);
-                    }
-                } else {
-                    setSuggestions([]);
-                }
-            } catch (e) {
-                console.error("Erro ao buscar pessoas:", e);
-            }
+    const loadSuggestions = React.useCallback(async () => {
+        if (!user) {
             setLoading(false);
-        };
-        fetchSuggestions();
+            return;
+        }
+
+        const db = window.firebaseDB;
+        const userId = user.id || user.uid;
+        if (!db || !userId) {
+            setError('Não foi possível carregar as sugestões. Atualize a página e tente novamente.');
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+        setCurrentIndex(0);
+        try {
+            const currentUserSnap = await db.ref(`users/${userId}`).once('value');
+            const currentUser = currentUserSnap.exists() ? currentUserSnap.val() : user;
+            const city = currentUser.city || user.city;
+            const state = currentUser.state || user.state;
+
+            if (!city || !state) {
+                setSuggestions([]);
+                return;
+            }
+
+            const [locationSnap, ignoredSnap] = await Promise.all([
+                db.ref(`location_users/${state}/${city}`).once('value'),
+                db.ref(`ignored_suggestions/${userId}`).once('value')
+            ]);
+            const ignored = ignoredSnap.exists() ? ignoredSnap.val() : {};
+            const userIds = locationSnap.exists()
+                ? Object.keys(locationSnap.val()).filter((id) => id && id !== userId && !ignored[id])
+                : [];
+            const profiles = await Promise.all(userIds.map(async (id) => {
+                const snap = await db.ref(`users/${id}`).once('value');
+                return snap.exists() ? { id: snap.key, ...snap.val() } : null;
+            }));
+
+            const shuffled = profiles.filter(Boolean);
+            for (let i = shuffled.length - 1; i > 0; i -= 1) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            setSuggestions(shuffled);
+        } catch (loadError) {
+            console.error('Erro ao buscar pessoas:', loadError);
+            setError('Não foi possível atualizar as sugestões agora. Tente novamente.');
+            setSuggestions([]);
+        } finally {
+            setLoading(false);
+        }
     }, [user]);
+
+    React.useEffect(() => {
+        loadSuggestions();
+    }, [loadSuggestions]);
 
     const handleAction = async (targetUser, action) => {
         const db = window.firebaseDB;
-        if (!db) return;
-        
-        const userId = user.id || user.uid;
-        if (!userId) return;
-        
-        if (action === 'like') {
-            await db.ref(`friend_requests/${targetUser.id}/${userId}`).set({
-                timestamp: Date.now(),
-                status: 'pending',
-                requesterName: user.name || user.username || 'Alguém',
-                requesterAvatar: user.profilePicture || 'https://via.placeholder.com/150'
-            }).catch(console.error);
-            showToast(`Pedido de amizade enviado para ${targetUser.name || targetUser.username}`);
-        } else {
-            await db.ref(`ignored_suggestions/${userId}/${targetUser.id}`).set(Date.now()).catch(console.error);
+        const userId = user && (user.id || user.uid);
+        if (!db || !userId || isActing) return;
+
+        setIsActing(true);
+        try {
+            if (action === 'like') {
+                await db.ref(`friend_requests/${targetUser.id}/${userId}`).set({
+                    timestamp: Date.now(),
+                    status: 'pending',
+                    requesterName: user.name || user.username || 'Alguém',
+                    requesterAvatar: user.profilePicture || ''
+                });
+                showToast(`Pedido enviado para ${profileName(targetUser)}.`, 'success');
+            } else {
+                await db.ref(`ignored_suggestions/${userId}/${targetUser.id}`).set(Date.now());
+                showToast('Sugestão removida.', 'info');
+            }
+            setCurrentIndex((index) => index + 1);
+        } catch (actionError) {
+            console.error('Erro ao atualizar sugestão:', actionError);
+            showToast('Não foi possível salvar sua ação. Tente novamente.', 'error');
+        } finally {
+            setIsActing(false);
         }
-        
-        setCurrentIndex(prev => prev + 1);
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen bg-primary flex items-center justify-center p-4">
-                <div className="icon-loader animate-spin text-4xl text-accent"></div>
-            </div>
-        );
+        return <LoadingScreen />;
+    }
+
+    if (!user) {
+        return <EmptyState icon="icon-log-in" title="Entre para descobrir pessoas" description="Faça login na Phantora para ver sugestões da sua região." actionLabel="Ir para o início" onAction={() => { window.location.href = 'index.html'; }} />;
     }
 
     const currentProfile = suggestions[currentIndex];
-
     return (
-        <div className="min-h-screen bg-primary flex flex-col font-sans animate-fade-in pb-20">
-            {toast && (
-                <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[70] bg-tertiary text-text-primary px-4 py-2 rounded-lg shadow-lg text-sm flex items-center gap-2 animate-fade-in-up border border-border">
-                    <div className="icon-info text-accent"></div>
-                    {toast}
+        <div className="min-h-screen bg-primary font-sans text-text-primary">
+            <header className="sticky top-0 z-20 border-b border-border bg-primary/85 backdrop-blur-xl">
+                <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+                    <button onClick={() => { window.location.href = 'index.html'; }} className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-text-secondary transition hover:bg-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-accent" aria-label="Voltar ao início">
+                        <span className="icon-arrow-left text-xl" aria-hidden="true"></span><span className="hidden sm:inline">Início</span>
+                    </button>
+                    <div className="text-center"><p className="text-sm font-bold text-text-primary">Descobrir</p><p className="text-xs text-text-muted">Pessoas perto de você</p></div>
+                    <button onClick={loadSuggestions} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-text-secondary transition hover:bg-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-accent" aria-label="Atualizar sugestões"><span className="icon-refresh-cw text-lg" aria-hidden="true"></span></button>
                 </div>
-            )}
-
-            <header className="bg-secondary/80 backdrop-blur-lg border-b border-border px-4 py-4 flex items-center sticky top-0 z-10">
-                <button onClick={() => window.location.href = 'index.html'} className="text-text-secondary hover:text-text-primary mr-4">
-                    <div className="icon-arrow-left text-2xl"></div>
-                </button>
-                <h1 className="text-xl font-bold text-text-primary">Descobrir Pessoas</h1>
             </header>
 
-            <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 w-full max-w-md mx-auto relative">
-                {currentProfile ? (
-                    <div className="bg-secondary rounded-3xl w-full overflow-hidden shadow-2xl border border-border flex flex-col relative animate-fade-in-up">
-                        <div className="w-full h-96 relative">
-                            <img 
-                                src={currentProfile.profilePicture || 'https://via.placeholder.com/400'} 
-                                className="w-full h-full object-cover absolute inset-0"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-secondary via-transparent to-transparent"></div>
-                        </div>
-                        <div className="p-6 text-center relative z-10 -mt-16">
-                            <h3 className="text-2xl font-bold text-text-primary">{currentProfile.name || currentProfile.username}</h3>
-                            <p className="text-text-muted text-sm mb-2">@{currentProfile.username || (currentProfile.name || 'usuario').toLowerCase().replace(/\s/g, '')}</p>
-                            
-                            {(currentProfile.city || currentProfile.state) && (
-                                <p className="text-text-secondary text-sm flex items-center justify-center gap-1 mt-1 bg-tertiary/50 py-1 px-3 rounded-full inline-flex">
-                                    <div className="icon-map-pin text-xs text-accent"></div> 
-                                    {currentProfile.city}{currentProfile.city && currentProfile.state ? ', ' : ''}{currentProfile.state}
-                                </p>
-                            )}
-                            
-                            <div className="flex justify-center gap-6 mt-8">
-                                <button 
-                                    onClick={() => handleAction(currentProfile, 'ignore')}
-                                    className="w-16 h-16 rounded-full bg-tertiary border border-border text-danger flex items-center justify-center hover:bg-danger/10 hover:border-danger transition-all shadow-lg active:scale-95"
-                                >
-                                    <div className="icon-x text-3xl"></div>
-                                </button>
-                                <button 
-                                    onClick={() => handleAction(currentProfile, 'like')}
-                                    className="w-16 h-16 rounded-full bg-accent text-white flex items-center justify-center hover:bg-accent-hover transition-all shadow-accent active:scale-95"
-                                >
-                                    <div className="icon-check text-3xl"></div>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="text-center text-text-secondary flex flex-col items-center">
-                        <div className="w-24 h-24 bg-tertiary rounded-full flex items-center justify-center mb-6">
-                            <div className="icon-users text-4xl text-text-muted"></div>
-                        </div>
-                        <h2 className="text-xl font-bold text-text-primary mb-2">Fim da linha!</h2>
-                        <p className="text-text-muted max-w-xs">Não há mais pessoas próximas para descobrir no momento. Volte mais tarde.</p>
-                        <button onClick={() => window.location.href = 'index.html'} className="mt-8 px-6 py-2 bg-tertiary text-text-primary rounded-lg font-semibold hover:bg-border transition-colors">
-                            Voltar ao Início
-                        </button>
-                    </div>
-                )}
+            <main className="mx-auto flex min-h-[calc(100vh-64px)] w-full max-w-md flex-col justify-center px-4 py-8 sm:px-6">
+                {toast && <div role="status" className={`fixed left-1/2 top-20 z-30 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-3 text-sm shadow-lg ${toast.type === 'error' ? 'border-danger/40 bg-danger/15 text-red-100' : 'border-border bg-tertiary text-text-primary'}`}><span className={toast.type === 'success' ? 'icon-check-circle text-success' : 'icon-info text-accent'} aria-hidden="true"></span>{toast.message}</div>}
+                {error ? <EmptyState icon="icon-wifi-off" title="Não foi possível carregar" description={error} actionLabel="Tentar novamente" onAction={loadSuggestions} /> : currentProfile ? <ProfileCard profile={currentProfile} position={currentIndex + 1} total={suggestions.length} isActing={isActing} onAction={handleAction} /> : <EmptyState icon="icon-users" title="Você viu todas as sugestões" description="Novas pessoas aparecerão aqui quando estiverem disponíveis na sua região." actionLabel="Atualizar" onAction={loadSuggestions} />}
             </main>
         </div>
     );
+}
+
+function profileName(profile) { return profile.name || profile.username || 'esta pessoa'; }
+
+function LoadingScreen() { return <div className="flex min-h-screen items-center justify-center bg-primary"><div className="flex flex-col items-center gap-3 text-text-secondary"><span className="icon-loader animate-spin text-3xl text-accent" aria-hidden="true"></span><span className="text-sm">Buscando pessoas para você...</span></div></div>; }
+
+function EmptyState({ icon, title, description, actionLabel, onAction }) { return <section className="rounded-3xl border border-border bg-secondary p-8 text-center shadow-card"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10"><span className={`${icon} text-3xl text-accent-light`} aria-hidden="true"></span></div><h1 className="mt-6 text-xl font-bold text-text-primary">{title}</h1><p className="mt-2 text-sm leading-6 text-text-secondary">{description}</p><button onClick={onAction} className="mt-7 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent-light">{actionLabel}</button></section>; }
+
+function ProfileCard({ profile, position, total, isActing, onAction }) {
+    const [imageError, setImageError] = React.useState(false);
+    const name = profileName(profile);
+    const username = profile.username || name.toLowerCase().replace(/\s+/g, '');
+    const location = [profile.city, profile.state].filter(Boolean).join(', ');
+    return <article className="overflow-hidden rounded-3xl border border-border bg-secondary shadow-card"><div className="relative h-[25rem] bg-tertiary">{profile.profilePicture && !imageError ? <img src={profile.profilePicture} alt={`Foto de perfil de ${name}`} className="h-full w-full object-cover" onError={() => setImageError(true)} /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-600/40 to-indigo-800/40"><span className="icon-user-round text-7xl text-violet-200/80" aria-hidden="true"></span></div>}<div className="absolute inset-0 bg-gradient-to-t from-secondary via-secondary/15 to-transparent"></div><div className="absolute left-5 top-5 rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-medium text-white backdrop-blur">Sugestão {position} de {total}</div></div><div className="relative -mt-20 px-6 pb-7 text-center"><h1 className="text-2xl font-bold text-white">{name}</h1><p className="mt-1 text-sm text-text-muted">@{username}</p>{location && <p className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-tertiary px-3 py-1.5 text-sm text-text-secondary"><span className="icon-map-pin text-accent" aria-hidden="true"></span>{location}</p>}<p className="mt-5 text-sm leading-6 text-text-secondary">Conheça essa pessoa e envie um pedido de amizade para começar uma nova conexão.</p><div className="mt-7 flex items-center justify-center gap-5"><button disabled={isActing} onClick={() => onAction(profile, 'ignore')} className="flex h-14 w-14 items-center justify-center rounded-full border border-border bg-tertiary text-danger transition hover:border-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Pular ${name}`}><span className="icon-x text-2xl" aria-hidden="true"></span></button><button disabled={isActing} onClick={() => onAction(profile, 'like')} className="flex h-14 min-w-36 items-center justify-center gap-2 rounded-full bg-accent px-5 text-sm font-semibold text-white shadow-accent transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"><span className="icon-user-plus text-lg" aria-hidden="true"></span>{isActing ? 'Enviando...' : 'Conectar'}</button></div></div></article>;
 }
 
 window.DiscoverPage = DiscoverPage;

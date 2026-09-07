@@ -11,16 +11,17 @@ function ProfileEditor({ user, onClose, onSave }) {
     const imageElementRef = React.useRef(null);
 
     React.useEffect(() => {
-        if (window.firebaseDB) {
-            const avatarRef = window.firebaseDB.ref('users/xJLACrZ2fcNGeU8ncmnpm39587g2/avatar');
-            const listener = avatarRef.on('value', (snap) => {
-                if (snap.exists()) {
-                    setAvatar(snap.val());
-                }
-            });
-            return () => avatarRef.off('value', listener);
-        }
-    }, []);
+        if (!window.firebaseDB || !user?.id) return undefined;
+
+        const avatarRef = window.firebaseDB.ref(`users/${user.id}/avatar`);
+        const listener = avatarRef.on('value', (snap) => {
+            if (snap.exists()) {
+                setAvatar(snap.val());
+            }
+        });
+
+        return () => avatarRef.off('value', listener);
+    }, [user?.id]);
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];
@@ -92,9 +93,13 @@ function ProfileEditor({ user, onClose, onSave }) {
             
             setAvatar(versionedUrl);
             
-            // Salvar no Firebase no campo avatar
+            // Mantém os dois campos sincronizados durante a migração dos
+            // componentes antigos que ainda leem profilePicture.
             if (window.firebaseDB && user?.id) {
-                await window.firebaseDB.ref(`users/${user.id}/avatar`).set(versionedUrl);
+                await window.firebaseDB.ref(`users/${user.id}`).update({
+                    avatar: versionedUrl,
+                    profilePicture: versionedUrl
+                });
             }
         } catch (err) {
             setErrorMsg("Erro ao enviar imagem: " + err.message);
@@ -133,7 +138,8 @@ function ProfileEditor({ user, onClose, onSave }) {
                 name: name,
                 username: cleanUsername,
                 bio: bio,
-                avatar: avatar
+                avatar: avatar,
+                profilePicture: avatar
             };
 
             await window.firebaseDB.ref(`users/${user.id}`).update(updates);
