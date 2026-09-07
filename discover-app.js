@@ -3,38 +3,32 @@ function App() {
     const [loading, setLoading] = React.useState(true);
 
     React.useEffect(() => {
-        const checkAuth = () => {
-            if (!window.firebaseAuth) {
-                console.warn('[DEBUG] Firebase Auth não encontrado no escopo global.');
+        if (!window.firebaseAuth) {
+            console.error('Não foi possível iniciar a autenticação do Firebase.');
+            setLoading(false);
+            return undefined;
+        }
+
+        const unsubscribe = window.firebaseAuth.onAuthStateChanged(async (authUser) => {
+            if (!authUser) {
+                setUser(null);
                 setLoading(false);
                 return;
             }
-            
-            window.firebaseAuth.onAuthStateChanged(async (authUser) => {
-                if (authUser) {
-                    const uid = authUser.uid;
-                    console.log(`[DEBUG] Usuário autenticado encontrado: ${uid}`);
-                    try {
-                        const db = window.firebaseDB;
-                        const snap = await db.ref(`users/${uid}`).once('value');
-                        if (snap.exists()) {
-                            console.log('[DEBUG] Dados do usuário carregados com sucesso.');
-                            setUser({ id: uid, uid: uid, ...snap.val() });
-                        } else {
-                            console.warn(`[DEBUG] Nó do usuário não encontrado no banco de dados para UID: ${uid}`);
-                        }
-                    } catch (err) {
-                        console.error('[DEBUG] Erro ao buscar dados do usuário:', err);
-                    }
-                    setLoading(false);
-                } else {
-                    console.warn('[DEBUG] Nenhum usuário autenticado encontrado (sessão vazia).');
-                    setLoading(false);
-                }
-            });
-        };
-        
-        checkAuth();
+
+            try {
+                const db = window.firebaseDB;
+                const snap = db ? await db.ref(`users/${authUser.uid}`).once('value') : null;
+                setUser({ id: authUser.uid, uid: authUser.uid, ...(snap && snap.exists() ? snap.val() : {}) });
+            } catch (err) {
+                console.error('Erro ao carregar o perfil:', err);
+                setUser({ id: authUser.uid, uid: authUser.uid });
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        return unsubscribe;
     }, []);
 
     if (loading) {
