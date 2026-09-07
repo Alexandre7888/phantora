@@ -96,19 +96,13 @@ function ConversationPage({ user }) {
         
         const listener = sessionRef.on('value', (snap) => {
             const data = snap.val();
-            if (!data) {
-                // Se a sessão não existir no perfil do usuário, pode ser uma entrada direta pela URL
-                // Tentamos validar apenas pelos IDs
-                if (sessionId && sessionId.includes(user.id)) {
-                    // Sessão válida, continuamos
-                } else {
-                    setError("Sessão não encontrada.");
-                    setLoading(false);
-                    return;
-                }
-            }
-
             const otherUserId = data ? data.otherUserId : targetId;
+            
+            if (!otherUserId) {
+                setError("Sessão não encontrada e ID alvo ausente.");
+                setLoading(false);
+                return;
+            }
             
             // Check block status
             db.ref(`blocks/${user.id}/${otherUserId}`).on('value', snap => setIsBlocked(snap.exists()));

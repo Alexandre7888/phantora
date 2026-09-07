@@ -35,9 +35,19 @@ function App() {
                         });
                         setLoading(false);
                         return;
+                    } else {
+                        // Fallback temporário se não achar no firebase
+                        setUser({
+                            id: publicId,
+                            name: codeHubData.nome || 'Usuário',
+                            avatar: 'https://via.placeholder.com/150'
+                        });
+                        setLoading(false);
+                        return;
                     }
                 }
                 
+                console.error("AuthMap não encontrado. Retornando ao Início.");
                 window.location.href = 'index.html';
             } catch (e) {
                 console.error("Auth error:", e);

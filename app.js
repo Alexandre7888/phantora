@@ -146,7 +146,7 @@ function App() {
                   publicId: uid,
                   email: user.email,
                   nome: firebaseData?.name || firebaseData?.username || user.displayName || 'Usuário',
-                  profilePicture: firebaseData?.profilePicture || null
+                  avatar: firebaseData?.avatar || firebaseData?.profilePicture || null
                 };
 
                 setUserData(combinedData);
@@ -161,9 +161,15 @@ function App() {
                     window.appSyncManager = new window.SyncManager(uid, 'mobile', null);
                 }
 
-                if (!firebaseData || !firebaseData.profilePicture) {
+                if (!firebaseData || (!firebaseData.avatar && !firebaseData.profilePicture)) {
                   setAppState('profile_setup');
                 } else {
+                  if (firebaseData.profilePicture && !firebaseData.avatar) {
+                      window.firebaseDB.ref(`users/${uid}/avatar`).set(firebaseData.profilePicture);
+                      combinedData.avatar = firebaseData.profilePicture;
+                      setUserData(combinedData);
+                      window.currentUserData = combinedData;
+                  }
                   // Register OneSignal Listener if logged in
                   if (window.OneSignalDeferred) {
                     window.OneSignalDeferred.push(async function(OneSignal) {
@@ -371,7 +377,7 @@ function App() {
         {appState === 'profile_setup' && <ProfileSetup userData={userData} onComplete={handleProfileComplete} />}
         {appState === 'dashboard' && (
           <SocialNetwork 
-            user={{id: userData.uid, name: userData.nome || 'Usuário', avatar: userData.profilePicture}} 
+            user={{id: userData.uid, name: userData.nome || 'Usuário', avatar: userData.avatar}} 
             onClose={handleLogout} 
           />
         )}

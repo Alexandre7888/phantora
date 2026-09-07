@@ -1,4 +1,4 @@
-function CameraCapture({ onCapture, onClose, photoOnly = false }) {
+function CameraCapture({ onCapture, onClose, photoOnly = false, embedded = false }) {
     const videoRef = React.useRef(null);
     const canvasRef = React.useRef(null);
     const arCanvasRef = React.useRef(null);
@@ -13,8 +13,11 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
     const audioPlayerRef = React.useRef(null);
     const filterImageRef = React.useRef(new Image());
     const searchInputRef = React.useRef(null);
+    const fileInputRef = React.useRef(null);
 
     const [hasPermission, setHasPermission] = React.useState(null);
+    const [showGallery, setShowGallery] = React.useState(false);
+    const [galleryMedia, setGalleryMedia] = React.useState([]);
     const [audios, setAudios] = React.useState([]);
     const [isLoadingAudios, setIsLoadingAudios] = React.useState(true);
     const [showAudioMenu, setShowAudioMenu] = React.useState(false);
@@ -35,6 +38,9 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
     const [showVolumeControls, setShowVolumeControls] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState('');
     const [filteredAudios, setFilteredAudios] = React.useState([]);
+    const [torchOn, setTorchOn] = React.useState(false);
+    const [captureMode, setCaptureMode] = React.useState('photo');
+    const [showSettings, setShowSettings] = React.useState(false);
     
     // Audio Context refs for mixing
     const audioContextRef = React.useRef(null);
@@ -51,6 +57,65 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
         { id: 'mask_anon', name: 'Máscara', type: 'face', url: 'https://cdn-icons-png.flaticon.com/512/2821/2821035.png' },
         { id: 'hat_crown', name: 'Coroa', type: 'head', url: 'https://cdn-icons-png.flaticon.com/512/1004/1004733.png' }
     ]);
+
+    // IndexedDB setup for Gallery
+    React.useEffect(() => {
+        const initDB = () => {
+            const request = indexedDB.open('PhantoraGallery', 1);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('media')) {
+                    db.createObjectStore('media', { keyPath: 'id', autoIncrement: true });
+                }
+            };
+            request.onsuccess = (e) => {
+                const db = e.target.result;
+                loadGalleryMedia(db);
+            };
+        };
+        initDB();
+    }, []);
+
+    const loadGalleryMedia = (db) => {
+        const transaction = db.transaction(['media'], 'readonly');
+        const store = transaction.objectStore('media');
+        const request = store.getAll();
+        request.onsuccess = () => {
+            setGalleryMedia(request.result.reverse());
+        };
+    };
+
+    const saveMediaToGallery = async (file) => {
+        const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open('PhantoraGallery', 1);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+
+        const transaction = db.transaction(['media'], 'readwrite');
+        const store = transaction.objectStore('media');
+        
+        const mediaObj = {
+            blob: file,
+            type: file.type.startsWith('video/') ? 'video' : 'image',
+            url: URL.createObjectURL(file),
+            timestamp: Date.now()
+        };
+
+        store.add(mediaObj);
+        transaction.oncomplete = () => {
+            loadGalleryMedia(db);
+        };
+    };
+
+    const handleFileUpload = (e) => {
+        const files = e.target.files;
+        if (files && files.length > 0) {
+            for(let i=0; i<files.length; i++) {
+                saveMediaToGallery(files[i]);
+            }
+        }
+    };
 
     // Filtrar áudios baseado na pesquisa
     React.useEffect(() => {
@@ -249,6 +314,7 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
     };
 
     React.useEffect(() => {
+        setTorchOn(false);
         startCamera();
         return () => {
             if (streamRef.current) {
@@ -365,6 +431,15 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
         if (track && capabilities?.zoom) {
             track.applyConstraints({ advanced: [{ zoom: newZoom }] }).catch(console.error);
         }
+    };
+
+    const toggleTorch = () => {
+        const track = streamRef.current?.getVideoTracks()[0];
+        if (!track || !capabilities?.torch) return;
+        const newVal = !torchOn;
+        track.applyConstraints({ advanced: [{ torch: newVal }] })
+            .then(() => setTorchOn(newVal))
+            .catch(console.error);
     };
 
     const takePhoto = () => {
@@ -485,10 +560,10 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
 
     const handleButtonPress = () => {
         if (photoOnly) return;
-        
+
         pressTimeRef.current = Date.now();
 
-        if (selectedAudio) {
+        if (selectedAudio || captureMode === 'video') {
             if (isRecording) {
                 stopRecording();
             } else {
@@ -504,8 +579,8 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
 
     const handleButtonRelease = () => {
         if (photoOnly) return;
-        
-        if (selectedAudio) {
+
+        if (selectedAudio || captureMode === 'video') {
             if (isRecording && Date.now() - pressTimeRef.current > 500) {
                 stopRecording();
             }
@@ -515,7 +590,7 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
         if (holdTimerRef.current) {
             clearTimeout(holdTimerRef.current);
         }
-        
+
         if (isRecording) {
             stopRecording();
         } else {
@@ -525,7 +600,7 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
 
     if (hasPermission === false) {
         return (
-            <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-black to-gray-900 z-[100] flex flex-col items-center justify-center text-white" data-name="camera-denied" data-file="components/CameraCapture.js">
+            <div className={`${embedded ? 'absolute' : 'fixed'} inset-0 bg-gradient-to-br from-gray-900 via-black to-gray-900 z-[100] flex flex-col items-center justify-center text-white`} data-name="camera-denied" data-file="components/CameraCapture.js">
                 <div className="w-24 h-24 rounded-full bg-red-500/10 flex items-center justify-center mb-6">
                     <div className="icon-camera-off text-5xl text-red-400"></div>
                 </div>
@@ -537,48 +612,62 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
     }
 
     return (
-        <div className="fixed inset-0 bg-black z-[100] flex flex-col select-none" data-name="camera-capture" data-file="components/CameraCapture.js">
+        <div className={`${embedded ? 'absolute' : 'fixed'} inset-0 bg-black z-[100] flex flex-col select-none`} data-name="camera-capture" data-file="components/CameraCapture.js">
             {/* Top Bar - Glass morphism */}
             <div className={`absolute top-0 left-0 right-0 z-20 ${previewMedia ? 'hidden' : ''}`}>
-                <div className="mx-4 mt-4">
-                    <div className="backdrop-blur-xl bg-black/30 rounded-3xl border border-white/10 px-4 py-3 flex items-center justify-between shadow-2xl">
-                        <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all duration-300 backdrop-blur-sm">
+                <div className="mx-3 mt-4">
+                    <div className="backdrop-blur-xl bg-black/30 rounded-full border border-white/10 pl-2 pr-3 py-2 flex items-center justify-between shadow-2xl">
+                        <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center transition-all duration-200 backdrop-blur-sm">
                             <div className="icon-x text-white text-lg"></div>
                         </button>
-                        
-                        <button 
-                            onClick={() => setShowAudioMenu(true)} 
+
+                        <button
+                            onClick={() => setShowAudioMenu(true)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-300 backdrop-blur-sm ${
-                                selectedAudio 
-                                    ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30' 
+                                selectedAudio
+                                    ? 'bg-gradient-to-r from-purple-500/25 to-pink-500/25 border border-purple-400/40 shadow-[0_0_16px_rgba(192,80,255,0.25)]'
                                     : 'bg-white/10 hover:bg-white/20 border border-white/10'
                             }`}
                         >
-                            <div className={`icon-music text-sm ${selectedAudio ? 'text-purple-400' : 'text-white'}`}></div>
-                            <span className="text-xs font-medium truncate max-w-[100px]">
+                            <div className={`icon-music text-sm ${selectedAudio ? 'text-purple-300' : 'text-white'}`}></div>
+                            <span className="text-xs font-medium truncate max-w-[90px]">
                                 {selectedAudio ? selectedAudio.name : 'Adicionar Som'}
                             </span>
                             {selectedAudio && (
                                 <div className="w-5 h-5 rounded-full bg-purple-400/20 flex items-center justify-center">
-                                    <div className="icon-check text-[10px] text-purple-400"></div>
+                                    <div className="icon-check text-[10px] text-purple-300"></div>
                                 </div>
                             )}
                         </button>
 
-                        <div className="flex gap-2">
-                            <button 
-                                onClick={() => setGridVisible(!gridVisible)} 
-                                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 backdrop-blur-sm ${
+                        <div className="flex gap-1.5">
+                            {capabilities?.torch && (
+                                <button
+                                    onClick={toggleTorch}
+                                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
+                                        torchOn ? 'bg-yellow-400 text-black shadow-[0_0_14px_rgba(250,204,21,0.6)]' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
+                                    }`}
+                                >
+                                    <div className="icon-zap text-base"></div>
+                                </button>
+                            )}
+                            {arEnabled && (
+                                <button
+                                    onClick={() => setShowFilterMenu(!showFilterMenu)}
+                                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
+                                        showFilterMenu || selectedFilter !== 'none' ? 'bg-gradient-to-br from-fuchsia-500/30 to-purple-500/30 text-fuchsia-300 border border-fuchsia-400/40' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
+                                    }`}
+                                >
+                                    <div className="icon-sparkles text-base"></div>
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setGridVisible(!gridVisible)}
+                                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
                                     gridVisible ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
                                 }`}
                             >
-                                <div className="icon-grid-3x3 text-lg"></div>
-                            </button>
-                            <button 
-                                onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')} 
-                                className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all duration-300 backdrop-blur-sm border border-white/10"
-                            >
-                                <div className="icon-camera text-white text-lg"></div>
+                                <div className="icon-grid-3x3 text-base"></div>
                             </button>
                         </div>
                     </div>
@@ -865,11 +954,81 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
                 <audio ref={audioPlayerRef} src={selectedAudio.mediaUrl} preload="auto" loop crossOrigin="anonymous" />
             )}
 
+            {/* AR Filter Carousel */}
+            {showFilterMenu && !previewMedia && !showGallery && (
+                <div className="absolute bottom-[184px] left-0 right-0 z-20 px-4">
+                    <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar snap-x" style={{ scrollbarWidth: 'none' }}>
+                        {filters.map(filter => (
+                            <button
+                                key={filter.id}
+                                onClick={() => setSelectedFilter(filter.id)}
+                                className="flex flex-col items-center gap-1.5 flex-shrink-0 snap-center"
+                            >
+                                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center backdrop-blur-md transition-all duration-300 overflow-hidden ${
+                                    selectedFilter === filter.id
+                                        ? 'border-2 border-fuchsia-400 bg-fuchsia-500/20 shadow-[0_0_18px_rgba(232,121,249,0.5)] scale-105'
+                                        : 'border border-white/15 bg-white/10 hover:bg-white/15'
+                                }`}>
+                                    {filter.id === 'none' ? (
+                                        <div className="icon-ban text-white/70 text-xl"></div>
+                                    ) : (
+                                        <img src={filter.url} className="w-9 h-9 object-contain" alt={filter.name} />
+                                    )}
+                                </div>
+                                <span className={`text-[11px] font-medium truncate max-w-[64px] ${selectedFilter === filter.id ? 'text-fuchsia-300' : 'text-white/70'}`}>
+                                    {filter.name}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Bottom Controls */}
-            <div className={`pb-8 bg-gradient-to-t from-black via-black to-transparent pt-8 z-20 ${previewMedia ? 'hidden' : ''}`}>
-                <div className="flex items-center justify-center">
-                    <div 
-                        className="relative cursor-pointer group"
+            <div className={`pb-10 bg-gradient-to-t from-black via-black/95 to-transparent pt-16 z-20 ${previewMedia || showGallery ? 'hidden' : ''} absolute bottom-0 left-0 right-0`}>
+                {/* Mode Switcher */}
+                {!photoOnly && !isRecording && (
+                    <div className="flex justify-center mb-6">
+                        <div className="flex items-center gap-1 bg-black/40 backdrop-blur-md rounded-full p-1 border border-white/10">
+                            <button
+                                onClick={() => setCaptureMode('photo')}
+                                className={`px-5 py-1.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${
+                                    captureMode === 'photo' ? 'bg-white text-black shadow-md' : 'text-white/60'
+                                }`}
+                            >
+                                FOTO
+                            </button>
+                            <button
+                                onClick={() => setCaptureMode('video')}
+                                className={`px-5 py-1.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${
+                                    captureMode === 'video' ? 'bg-red-500 text-white shadow-md shadow-red-500/30' : 'text-white/60'
+                                }`}
+                            >
+                                VÍDEO
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex items-center justify-between px-10 max-w-md mx-auto">
+                    {/* Gallery Button */}
+                    <button
+                        onClick={() => setShowGallery(true)}
+                        className="relative w-12 h-12 rounded-2xl active:scale-90 transition-all duration-200"
+                    >
+                        <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-br from-fuchsia-500 via-purple-500 to-cyan-400 opacity-80"></div>
+                        <div className="relative w-full h-full rounded-2xl bg-black overflow-hidden flex items-center justify-center border border-black">
+                            {galleryMedia.length > 0 ? (
+                                <img src={galleryMedia[0].url} className="w-full h-full object-cover" alt="Gallery" />
+                            ) : (
+                                <div className="icon-image text-white text-lg"></div>
+                            )}
+                        </div>
+                    </button>
+
+                    {/* Capture Button */}
+                    <div
+                        className="relative cursor-pointer group select-none"
                         onMouseDown={handleButtonPress}
                         onMouseUp={handleButtonRelease}
                         onMouseLeave={handleButtonRelease}
@@ -878,38 +1037,44 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
                     >
                         {/* Outer glow */}
                         <div className={`absolute inset-0 rounded-full blur-xl transition-all duration-300 ${
-                            isRecording 
-                                ? 'bg-red-500/30 scale-110' 
-                                : 'bg-white/20 scale-100 group-hover:scale-105'
+                            isRecording
+                                ? 'bg-red-500/40 scale-125'
+                                : captureMode === 'video'
+                                    ? 'bg-red-500/20 scale-105'
+                                    : 'bg-white/25 scale-100 group-hover:scale-110'
                         }`}></div>
-                        
+
                         {/* Outer Ring */}
-                        <div className={`relative w-[90px] h-[90px] rounded-full flex items-center justify-center transition-all duration-300 ${
-                            isRecording 
-                                ? 'border-[4px] border-red-500 scale-110' 
-                                : 'border-[4px] border-white group-hover:scale-105'
+                        <div className={`relative w-[86px] h-[86px] rounded-full flex items-center justify-center transition-all duration-300 ${
+                            isRecording
+                                ? 'border-[4px] border-red-500 scale-110'
+                                : captureMode === 'video'
+                                    ? 'border-[4px] border-red-400/80 group-hover:scale-105'
+                                    : 'border-[4px] border-white group-hover:scale-105'
                         }`}>
                             {/* Inner Button */}
-                            <div className={`rounded-full transition-all duration-300 shadow-2xl ${
-                                isRecording 
-                                    ? 'w-9 h-9 bg-red-500 rounded-xl' 
-                                    : 'w-[74px] h-[74px] bg-white group-hover:scale-95'
+                            <div className={`transition-all duration-300 shadow-2xl ${
+                                isRecording
+                                    ? 'w-8 h-8 bg-red-500 rounded-lg'
+                                    : captureMode === 'video'
+                                        ? 'w-[68px] h-[68px] bg-red-500 rounded-full group-active:scale-90'
+                                        : 'w-[70px] h-[70px] bg-white rounded-full group-active:scale-90'
                             }`}></div>
                         </div>
-                        
+
                         {/* Recording Progress Ring */}
                         {!photoOnly && isRecording && (
-                            <svg className="absolute inset-0 w-[90px] h-[90px] -rotate-90 pointer-events-none">
-                                <circle 
-                                    cx="45" 
-                                    cy="45" 
-                                    r="41" 
-                                    fill="none" 
-                                    stroke="url(#gradient)" 
-                                    strokeWidth="4" 
+                            <svg className="absolute inset-0 w-[86px] h-[86px] -rotate-90 pointer-events-none">
+                                <circle
+                                    cx="43"
+                                    cy="43"
+                                    r="39"
+                                    fill="none"
+                                    stroke="url(#gradient)"
+                                    strokeWidth="4"
                                     strokeLinecap="round"
-                                    strokeDasharray="257" 
-                                    strokeDashoffset={257 - (recordingTime / 60) * 257}
+                                    strokeDasharray="245"
+                                    strokeDashoffset={245 - (recordingTime / 60) * 245}
                                     className="transition-all duration-1000 ease-linear"
                                 />
                                 <defs>
@@ -921,8 +1086,70 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
                             </svg>
                         )}
                     </div>
+
+                    {/* Flip Camera */}
+                    <button
+                        onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
+                        className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 backdrop-blur-md flex items-center justify-center border border-white/15 transition-all duration-200"
+                    >
+                        <div className="icon-refresh-cw text-white text-lg"></div>
+                    </button>
                 </div>
             </div>
+
+            {/* Gallery View */}
+            {showGallery && (
+                <div className="absolute inset-0 bg-black z-50 flex flex-col">
+                    <div className="p-4 flex items-center justify-between border-b border-white/10 bg-gray-900/50 backdrop-blur-md">
+                        <button onClick={() => setShowGallery(false)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white">
+                            <div className="icon-x text-xl"></div>
+                        </button>
+                        <h2 className="text-white font-semibold">Galeria</h2>
+                        <div className="w-10"></div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2">
+                        <div className="grid grid-cols-4 gap-2">
+                            {/* Add Media Button */}
+                            <label className="aspect-square bg-blue-600 rounded-lg flex flex-col items-center justify-center hover:bg-blue-500 transition-colors border border-blue-400/50 shadow-lg shadow-blue-500/20 cursor-pointer">
+                                <div className="icon-plus text-white text-3xl mb-1"></div>
+                                <input 
+                                    type="file" 
+                                    onChange={handleFileUpload} 
+                                    accept="image/*,video/*" 
+                                    multiple 
+                                    className="hidden" 
+                                />
+                            </label>
+
+                            {/* Media Items */}
+                            {galleryMedia.map((media) => (
+                                <div 
+                                    key={media.id} 
+                                    onClick={() => {
+                                        setPreviewMedia({ type: media.type, url: media.url, blob: media.blob });
+                                        setShowGallery(false);
+                                    }}
+                                    className="aspect-square bg-gray-800 rounded-lg overflow-hidden cursor-pointer relative group border border-white/5"
+                                >
+                                    {media.type === 'video' ? (
+                                        <>
+                                            <video src={media.url} className="w-full h-full object-cover" />
+                                            <div className="absolute bottom-1 right-1 bg-black/60 rounded px-1 text-[10px] text-white backdrop-blur-sm">
+                                                <div className="icon-video text-xs"></div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <img src={media.url} className="w-full h-full object-cover" alt="Media" />
+                                    )}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <div className="icon-circle-check text-white text-2xl"></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Preview Media Editor */}
             {previewMedia && (
@@ -955,6 +1182,10 @@ function CameraCapture({ onCapture, onClose, photoOnly = false }) {
                 }
                 .animate-slide-in-right {
                     animation: slide-in-right 0.3s ease-out;
+                }
+
+                .no-scrollbar::-webkit-scrollbar {
+                    display: none;
                 }
             `}</style>
         </div>

@@ -47,11 +47,15 @@ function GenericUpload({ user, contentType, config, onClose, onUploadComplete })
             setUploadStatus('Enviando para o servidor...');
             setUploadProgress(40);
             
-            let folderType = 'fotos';
-            if (contentType === 'video') folderType = 'video';
-            if (contentType === 'audio') folderType = 'áudio';
+            // Adiciona timestamp para garantir nome único no upload novo
+            const uniqueFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+            const renamedFile = new File([file], uniqueFileName, { type: file.type });
             
-            const mediaUrl = await window.api.uploadToCDN(file, user.id, folderType);
+            let mediaUrl = await window.api.uploadImageToService(renamedFile, 'upload');
+            
+            // Garante cache bypass
+            const baseUrl = mediaUrl.split('?')[0];
+            mediaUrl = `${baseUrl}?v=${Date.now()}`;
             
             setUploadProgress(80);
             setUploadStatus('Salvando publicação...');

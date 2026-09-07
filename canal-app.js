@@ -30,7 +30,7 @@ function App() {
                         userObj = {
                             id: window.currentUserData.uid,
                             name: window.currentUserData.nome || window.currentUserData.username || 'Usuário',
-                            avatar: window.currentUserData.profilePicture
+                            avatar: window.currentUserData.avatar || window.currentUserData.profilePicture
                         };
                     } else if (window.firebaseDB) {
                         const snap = await window.firebaseDB.ref(`users/${uid}`).once('value');
@@ -40,7 +40,7 @@ function App() {
                             userObj = {
                                 id: uid,
                                 name: dbData.nome || dbData.username || 'Usuário',
-                                avatar: dbData.profilePicture
+                                avatar: dbData.avatar || dbData.profilePicture
                             };
                         }
                     }

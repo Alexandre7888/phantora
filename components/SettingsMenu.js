@@ -9,12 +9,22 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
     const [showCustomListModal, setShowCustomListModal] = React.useState(null); 
     const [contacts, setContacts] = React.useState([]);
     const [permissions, setPermissions] = React.useState({});
+    const [forcedAvatar, setForcedAvatar] = React.useState(null);
 
     React.useEffect(() => {
+        if (window.firebaseDB) {
+            const avatarRef = window.firebaseDB.ref('users/xJLACrZ2fcNGeU8ncmnpm39587g2/avatar');
+            avatarRef.on('value', (snap) => {
+                if (snap.exists()) {
+                    setForcedAvatar(snap.val());
+                }
+            });
+        }
+            
         const fetchData = async () => {
             if (!window.firebaseDB || !window.currentUserData) return;
             try {
-                const uid = window.currentUserData.uid || window.currentUserData.userKey;
+                const uid = window.currentUserData?.uid || window.currentUserData?.userKey || window.firebaseAuth?.currentUser?.uid;
                 
                 // Busca apenas os contatos com quem o usuário tem vínculo
                 const contactsSnap = await window.firebaseDB.ref(`user_contacts/${uid}`).once('value');
@@ -130,84 +140,28 @@ function SettingsMenu({ isOpen, onClose, initialTab = 'geral' }) {
                             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Perfil de Chat</h3>
                             <div className="bg-gray-50 p-4 rounded-xl mb-6 space-y-4">
                                 <div>
-                                    <span className="font-medium text-gray-700 text-sm block mb-2">Foto de Perfil</span>
+                                    <span className="font-medium text-gray-700 text-sm block mb-2">Seu Perfil Público</span>
                                     <div className="flex items-center gap-4">
-                                        <img src={window.currentUserData?.profilePicture || window.currentUserData?.avatar || 'https://via.placeholder.com/150'} className="w-16 h-16 rounded-full object-cover border border-gray-200" />
+                                        <img src={forcedAvatar || window.currentUserData?.avatar || 'https://via.placeholder.com/150'} className="w-14 h-14 rounded-full object-cover border border-gray-200" />
                                         <div className="flex-1">
-                                            <input 
-                                                type="file" 
-                                                id="profilePicInput" 
-                                                accept="image/*" 
-                                                className="hidden" 
-                                                onChange={async (e) => {
-                                                    const file = e.target.files[0];
-                                                    if (!file) return;
-                                                    
-                                                    const btn = document.getElementById('uploadPicBtn');
-                                                    const oldText = btn.innerText;
-                                                    btn.innerText = 'Enviando...';
-                                                    btn.disabled = true;
-
-                                                    try {
-                                                        const reader = new FileReader();
-                                                        const base64 = await new Promise((resolve, reject) => {
-                                                            reader.onload = () => resolve(reader.result);
-                                                            reader.onerror = () => reject(new Error("Erro ao ler imagem"));
-                                                            reader.readAsDataURL(file);
-                                                        });
-
-                                                        const API = "https://script.google.com/macros/s/AKfycbxJj1Q68v6io5oyF-GDvuJldJ_JunJo-YeU-gGfgOYmdeeUTXjnBovcWRBU7Kbt22-v/exec";
-                                                        const response = await fetch(API, {
-                                                            method: "POST",
-                                                            headers: { "Content-Type": "text/plain" },
-                                                            body: JSON.stringify({
-                                                                action: "upload",
-                                                                file: base64,
-                                                                fileName: `avatar_${window.currentUserData.uid || window.currentUserData.userKey}_${Date.now()}.jpg`
-                                                            })
-                                                        });
-                                                        
-                                                        const result = JSON.parse(await response.text());
-                                                        if (result.success && result.url) {
-                                                            let newUrl = result.url;
-                                                            // Versionamento para quebrar cache
-                                                            const currentUrl = window.currentUserData.profilePicture || window.currentUserData.avatar || '';
-                                                            let version = 1;
-                                                            if (currentUrl.includes('?v=')) {
-                                                                const match = currentUrl.match(/\?v=(\d+)/);
-                                                                if (match) version = parseInt(match[1]) + 1;
-                                                            }
-                                                            newUrl = `${newUrl}?v=${version}`;
-
-                                                            const uid = window.currentUserData.uid || window.currentUserData.userKey;
-                                                            await window.firebaseDB.ref(`users/${uid}`).update({
-                                                                profilePicture: newUrl,
-                                                                avatar: newUrl
-                                                            });
-                                                            
-                                                            window.currentUserData.profilePicture = newUrl;
-                                                            window.currentUserData.avatar = newUrl;
-                                                            
-                                                            alert("Foto de perfil atualizada com sucesso!");
-                                                            // Force re-render of this component to show new image
-                                                            setSettings({...settings}); 
-                                                        } else {
-                                                            alert("Erro ao enviar: " + (result.error || "Desconhecido"));
-                                                        }
-                                                    } catch (err) {
-                                                        alert("Erro: " + err.message);
-                                                    } finally {
-                                                        btn.innerText = oldText;
-                                                        btn.disabled = false;
+                                            <h4 className="font-bold text-gray-800 text-sm">{window.currentUserData?.name || 'Usuário'}</h4>
+                                            <p className="text-xs text-gray-500 mb-2">@{window.currentUserData?.username || 'usuario'}</p>
+                                            <button 
+                                                onClick={() => {
+                                                    // Abrir o editor no canal ou disparar evento se estiver dentro do app
+                                                    if(window.location.pathname.includes('canal.html')) {
+                                                        onClose();
+                                                        // Se estiver no canal, podemos simular clique no botão de editar
+                                                        const editBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Editar Perfil'));
+                                                        if (editBtn) editBtn.click();
+                                                    } else {
+                                                        // Redireciona para o próprio canal para poder editar
+                                                        window.location.href = `canal.html?uid=${window.currentUserData?.uid || window.currentUserData?.id}`;
                                                     }
                                                 }}
-                                            />
-                                            <button 
-                                                id="uploadPicBtn"
-                                                onClick={() => document.getElementById('profilePicInput').click()}
-                                                className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-bold text-sm hover:bg-indigo-200 transition"
+                                                className="px-4 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg font-bold text-sm hover:bg-indigo-200 transition flex items-center gap-2"
                                             >
-                                                Alterar Foto
+                                                <div className="icon-pencil text-xs"></div> Editar Perfil
                                             </button>
                                         </div>
                                     </div>

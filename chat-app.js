@@ -28,12 +28,15 @@ function App() {
                     const firebaseData = await window.api.getFirebaseUser(publicId);
                     
                     if (firebaseData) {
-                        setUser({
+                        const userDataObj = {
                             id: publicId,
+                            uid: publicId,
                             name: firebaseData.name || firebaseData.username || codeHubData.nome || 'Usuário',
                             avatar: firebaseData.profilePicture,
                             ...firebaseData
-                        });
+                        };
+                        window.currentUserData = userDataObj;
+                        setUser(userDataObj);
                         setLoading(false);
                         return;
                     }

@@ -35,6 +35,7 @@ function SocialNetwork({ user, onClose }) {
     const [toast, setToast] = React.useState(null);
     const [now, setNow] = React.useState(Date.now());
     const [following, setFollowing] = React.useState({});
+    const [followerStats, setFollowerStats] = React.useState({ count: 0, lastUpdated: null });
     const [bufferingVideos, setBufferingVideos] = React.useState({});
     const [userInterests, setUserInterests] = React.useState({});
     const [pendingLink, setPendingLink] = React.useState(null);
@@ -152,7 +153,7 @@ function SocialNetwork({ user, onClose }) {
                 const uData = snap.val() || {};
                 const result = {
                     name: uData.name || 'Usuário',
-                    avatar: uData.profilePicture || uData.avatar || 'https://via.placeholder.com/150',
+                    avatar: uData.avatar || uData.profilePicture || 'https://via.placeholder.com/150',
                     username: uData.username || (uData.name || 'usuario').toLowerCase().replace(/\s/g, ''),
                     isVerified: !!uData.isVerified
                 };
@@ -234,6 +235,26 @@ function SocialNetwork({ user, onClose }) {
         const followsListener = followsRef.on('value', (snap) => {
             setFollowing(snap.val() || {});
         });
+
+        // Count followers by listening to all follows (or an index if it existed, but here we query follows)
+        // Since follows can be large, a better approach is to just query follows once or listen to a specific followers node if it's maintained.
+        // For now, we will just fetch the followers count by reading the follows node where target is user.id
+        const calculateFollowers = async () => {
+            try {
+                const snap = await db.ref('follows').once('value');
+                if (snap.exists()) {
+                    const allFollows = snap.val();
+                    let count = 0;
+                    for (const followerId in allFollows) {
+                        if (allFollows[followerId][user.id]) count++;
+                    }
+                    setFollowerStats({ count, lastUpdated: Date.now() });
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        calculateFollowers();
         
         // Fetch Suggestions
         const fetchSuggestions = async () => {
@@ -534,12 +555,17 @@ function SocialNetwork({ user, onClose }) {
     const toggleFollow = async (targetId) => {
         const db = window.firebaseDB;
         if (!db) return;
-        if (following[targetId]) {
-            await db.ref(`follows/${user.id}/${targetId}`).remove();
-            showToast("Você deixou de seguir este usuário.");
-        } else {
-            await db.ref(`follows/${user.id}/${targetId}`).set(true);
-            showToast("Você agora está seguindo este usuário!");
+        try {
+            if (following[targetId]) {
+                await db.ref(`follows/${user.id}/${targetId}`).remove();
+                showToast("Você deixou de seguir este usuário.");
+            } else {
+                await db.ref(`follows/${user.id}/${targetId}`).set(true);
+                showToast("Você agora está seguindo este usuário!");
+            }
+        } catch (error) {
+            console.error("Erro ao seguir:", error);
+            showToast("Erro ao tentar seguir o usuário.");
         }
     };
 
@@ -1058,12 +1084,18 @@ function SocialNetwork({ user, onClose }) {
                     <img 
                         src={user.avatar || 'https://via.placeholder.com/150'} 
                         alt="Avatar" 
-                        className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer hover:opacity-80 transition-opacity"
+                        className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer hover:opacity-80 transition-opacity shrink-0"
                         onClick={() => window.location.href = `canal.html?uid=${user.id}`}
                     />
-                    <h1 className={`text-lg font-bold text-primary hidden sm:block`}>
-                        Phantora
-                    </h1>
+                    <div className="flex flex-col justify-center">
+                        <h1 className={`text-lg font-bold text-primary hidden sm:block leading-none mb-1`}>
+                            Phantora
+                        </h1>
+                        <div className="flex flex-col">
+                            <span className="text-yellow-500 font-bold text-xs leading-none">{followerStats.count} {followerStats.count === 1 ? 'seguidor' : 'seguidores'}</span>
+                            <span className="text-text-muted text-[10px] leading-none mt-1">atualizado agora</span>
+                        </div>
+                    </div>
                 </div>
                 
                 <div className="flex items-center gap-1 sm:gap-2">
@@ -1087,13 +1119,17 @@ function SocialNetwork({ user, onClose }) {
 
             {/* Navigation Menus */}
             {/* Mobile Bottom Navigation */}
-            <div className="md:hidden fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center gap-8 shadow-lg">
+            <div className="md:hidden fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center justify-between w-[90%] max-w-[400px] shadow-lg">
                 <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'}`}>
                     <div className="icon-house text-2xl"></div>
                 </button>
                 
                 <button onClick={() => setDesktopView('chat')} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'chat' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'}`}>
                     <div className="icon-message-circle text-2xl"></div>
+                </button>
+
+                <button onClick={() => window.location.href = 'upload.html'} className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] hover:bg-blue-600 transition-colors active:scale-95 -mt-6 border-4 border-primary">
+                    <div className="icon-plus text-2xl font-bold"></div>
                 </button>
 
                 <button onClick={() => {
@@ -1108,16 +1144,27 @@ function SocialNetwork({ user, onClose }) {
                 }} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95">
                     <div className="icon-circle-play text-2xl"></div>
                 </button>
+                
+                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95">
+                    <div className="icon-user text-2xl"></div>
+                </button>
+                <button onClick={() => setShowSettings(true)} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95 sm:hidden">
+                    <div className="icon-settings text-2xl"></div>
+                </button>
             </div>
 
             {/* Desktop Right Sidebar */}
-            <div className="hidden md:flex flex-col fixed right-0 top-[60px] bottom-0 w-20 bg-secondary/90 backdrop-blur-lg border-l border-border z-[40] py-6 items-center gap-8 shadow-lg">
+            <div className="hidden md:flex flex-col fixed right-0 top-[60px] bottom-0 w-20 bg-secondary/90 backdrop-blur-lg border-l border-border z-[40] py-6 items-center gap-6 shadow-lg">
                 <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`p-3 rounded-xl transition-all ${desktopView === 'feed' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-tertiary hover:text-text-primary'}`} title="Início">
                     <div className="icon-house text-2xl"></div>
                 </button>
                 
                 <button onClick={() => setDesktopView('chat')} className={`p-3 rounded-xl transition-all ${desktopView === 'chat' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-tertiary hover:text-text-primary'}`} title="Mensagens">
                     <div className="icon-message-circle text-2xl"></div>
+                </button>
+
+                <button onClick={() => window.location.href = 'upload.html'} className="w-12 h-12 rounded-xl bg-blue-500 text-white flex items-center justify-center hover:bg-blue-600 transition-all shadow-[0_0_15px_rgba(59,130,246,0.4)]" title="Novo Post">
+                    <div className="icon-plus text-2xl font-bold"></div>
                 </button>
 
                 <button onClick={() => {
@@ -1133,15 +1180,25 @@ function SocialNetwork({ user, onClose }) {
                     <div className="icon-circle-play text-2xl"></div>
                 </button>
 
-                <div className="mt-auto">
-                    <button onClick={() => setShowPostCreator(true)} className="p-3 rounded-xl bg-accent text-white hover:bg-accent-hover transition-all shadow-accent" title="Novo Post">
-                        <div className="icon-plus text-2xl"></div>
-                    </button>
-                </div>
+                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="p-3 rounded-xl text-text-secondary hover:bg-tertiary hover:text-text-primary transition-all" title="Meu Canal">
+                    <div className="icon-user text-2xl"></div>
+                </button>
+                <button onClick={() => setShowSettings(true)} className="p-3 rounded-xl text-text-secondary hover:bg-tertiary hover:text-text-primary transition-all" title="Configurações">
+                    <div className="icon-settings text-2xl"></div>
+                </button>
             </div>
             
-            {showSettings && window.SettingsMenu && (
-                <window.SettingsMenu isOpen={true} onClose={() => setShowSettings(false)} />
+            {showSettings && (
+                typeof window.SettingsMenu !== 'undefined' ? (
+                    <window.SettingsMenu isOpen={true} onClose={() => setShowSettings(false)} />
+                ) : (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-xl">
+                            <p>O menu de configurações está carregando ou ocorreu um erro...</p>
+                            <button onClick={() => setShowSettings(false)} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg">Fechar</button>
+                        </div>
+                    </div>
+                )
             )}
 
             {/* Stories Section */}
@@ -1224,35 +1281,13 @@ function SocialNetwork({ user, onClose }) {
                     <>
                         {/* Search Redirect Button */}
                         <div className={`p-4 ${cardBg} mb-6 max-w-2xl mx-auto`}>
-                    <button onClick={() => setShowPostCreator(true)} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary text-text-muted hover:border-border-active transition-colors">
+                    <button onClick={() => window.location.href = 'upload.html'} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary text-text-muted hover:border-border-active transition-colors">
                         <div className="icon-plus text-accent text-lg"></div>
                         <span className="font-semibold text-text-primary">Criar nova publicação...</span>
                     </button>
                 </div>
 
-                {friendSuggestions.length > 0 && (
-                    <div className="mb-6">
-                        <h3 className="text-sm font-bold text-text-secondary mb-3 flex items-center gap-2">
-                            <div className="icon-user-plus"></div> 
-                            Sugestões de Amigos
-                        </h3>
-                        <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-                            {friendSuggestions.map(s => (
-                                <div key={s.id} className={`${cardBg} p-4 flex flex-col items-center min-w-[140px] flex-shrink-0`}>
-                                    <img src={s.profilePicture || 'https://via.placeholder.com/150'} className="w-16 h-16 rounded-full object-cover mb-2 border border-border" />
-                                    <span className="font-bold text-sm text-center truncate w-full">{s.name || s.username || 'Usuário'}</span>
-                                    <span className="text-xs text-text-muted mb-3">@{s.username || (s.name || 'usuario').toLowerCase().replace(/\s/g, '')}</span>
-                                    <button 
-                                        onClick={() => toggleFollow(s.id)}
-                                        className={`w-full py-1.5 rounded-lg text-xs font-bold transition-colors ${following[s.id] ? 'bg-tertiary text-text-primary' : 'bg-accent text-white hover:bg-accent-hover'}`}
-                                    >
-                                        {following[s.id] ? 'Seguindo' : 'Seguir'}
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
+
 
                 {filteredPosts.length === 0 ? (
                     <div className={`text-center mt-10 ${textMuted}`}>
@@ -1286,7 +1321,7 @@ function SocialNetwork({ user, onClose }) {
                                             </h3>
                                             {post.authorId !== user.id && (
                                                 <button 
-                                                    onClick={() => toggleFollow(post.authorId)}
+                                                    onClick={(e) => { e.stopPropagation(); toggleFollow(post.authorId); }}
                                                     className={`text-xs px-2 py-0.5 rounded-md border font-semibold transition-colors ${following[post.authorId] ? 'border-border text-text-secondary hover:text-danger hover:border-danger hover:bg-danger/10' : 'border-accent text-accent hover:bg-accent hover:text-white'}`}
                                                 >
                                                     {following[post.authorId] ? 'Seguindo' : 'Seguir'}

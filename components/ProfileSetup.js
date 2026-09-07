@@ -84,7 +84,9 @@ function ProfileSetup({ userData, onComplete }) {
               closeCropModal();
               
               // Converte blob para file para enviar pro GAS
-              const file = new File([blob], "profile.jpg", { type: "image/jpeg" });
+              const publicId = userData.publicId || userData.uid || 'temp_user';
+              const fileName = `avatar_${publicId}.jpg`;
+              const file = new File([blob], fileName, { type: "image/jpeg" });
               const url = await window.api.uploadImageToService(file);
               const versionedUrl = url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
               
@@ -247,7 +249,7 @@ function ProfileSetup({ userData, onComplete }) {
         email: userData.email || '',
         uid: publicId,
         publicId: publicId,
-        profilePicture: base64Image,
+        avatar: base64Image,
         updatedAt: new Date().toISOString(),
         followers: 0,
         following: 0,
@@ -261,7 +263,7 @@ function ProfileSetup({ userData, onComplete }) {
         ...userData,
         uid: publicId,
         publicId: publicId,
-        profilePicture: base64Image
+        avatar: base64Image
       });
     } catch (error) {
       console.error('Error saving profile:', error);

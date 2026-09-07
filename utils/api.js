@@ -98,16 +98,28 @@ const api = {
   },
 
   // Helper to compress image and convert to base64
-  uploadImageToService: async (file) => {
+  uploadImageToService: async (file, action = "upload", targetName = null) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async function() {
         try {
           const URL = "https://script.google.com/macros/s/AKfycbzYlwb6VwgfW9R2ZKQ3QEIvPwakVAAdcfLxPN8gIFcMdpAzyTsZn1ZnglCuwKEpkOla/exec";
+          
+          const payload = {
+            action: action,
+            file: reader.result
+          };
+
+          if (action === "replace" && targetName) {
+            payload.targetName = targetName;
+          } else {
+            payload.fileName = file.name;
+          }
+
           const resposta = await fetch(URL, {
             method: "POST",
             headers: { "Content-Type": "text/plain" },
-            body: JSON.stringify({ file: reader.result, fileName: file.name })
+            body: JSON.stringify(payload)
           });
           const dados = await resposta.json();
           if (dados.url) {
@@ -122,6 +134,22 @@ const api = {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+  },
+  
+  deleteMediaFromService: async (fileName) => {
+    try {
+      const URL = "https://script.google.com/macros/s/AKfycbzYlwb6VwgfW9R2ZKQ3QEIvPwakVAAdcfLxPN8gIFcMdpAzyTsZn1ZnglCuwKEpkOla/exec";
+      const resposta = await fetch(URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ action: "delete", fileName })
+      });
+      const dados = await resposta.json();
+      return dados.success || true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
   },
 
   compressImage: (file, maxWidth = 800, quality = 0.6) => {

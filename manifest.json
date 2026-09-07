@@ -1,7 +1,7 @@
 {
-  "name": "mensagensHUB",
-  "short_name": "mensagensHUB",
-  "description": "Aplicativo de chat e rede social com WebRTC",
+  "name": "Phantora",
+  "short_name": "Phantora",
+  "description": "rede social",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
