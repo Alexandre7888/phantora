@@ -22,16 +22,7 @@ function UserChannel({ currentUser, channelUserId }) {
                 userRef.on('value', async (snapshot) => {
                     if (snapshot.exists()) {
                         const data = snapshot.val();
-                        let customAvatar = data.avatar || 'https://ui-avatars.com/api/?name=U&background=random';
-                        
-                        try {
-                            const snapAvatar = await db.ref('users/xJLACrZ2fcNGeU8ncmnpm39587g2/avatar').once('value');
-                            if (snapAvatar.exists()) {
-                                customAvatar = snapAvatar.val();
-                            }
-                        } catch (e) {
-                            console.error("Erro ao buscar avatar customizado do Firebase:", e);
-                        }
+                        const customAvatar = data.avatar || data.profilePicture || 'https://ui-avatars.com/api/?name=U&background=random';
 
                         setChannelUser({
                             id: channelUserId,
