@@ -24,8 +24,7 @@ function VideoFeed({
     const [isMuted, setIsMuted] = React.useState(false);
     const [showVideoComments, setShowVideoComments] = React.useState(null);
     const [commentText, setCommentText] = React.useState('');
-    const [subTarget, setSubTarget] = React.useState(null);
-    
+
     const videoContainerRef = React.useRef(null);
     const viewStartTime = React.useRef(null);
 
@@ -44,11 +43,11 @@ function VideoFeed({
     React.useEffect(() => {
         if (videoContainerRef.current && infiniteFeed.length > 0) {
             let observer = null;
-            
+
             const initTimer = setTimeout(() => {
                 const container = videoContainerRef.current;
                 if (!container) return;
-                
+
                 const videoEl = container.children[activeVideoFeed];
                 if (videoEl) {
                     container.scrollTo({ top: videoEl.offsetTop, behavior: 'instant' });
@@ -58,7 +57,7 @@ function VideoFeed({
                     entries.forEach(entry => {
                         const idx = Number(entry.target.dataset.index);
                         const video = entry.target.querySelector('video');
-                        
+
                         if (entry.isIntersecting) {
                             setActiveVideoFeed(idx);
                             if (video && video.paused) {
@@ -72,7 +71,7 @@ function VideoFeed({
                                     });
                                 });
                             }
-                            
+
                             if (activeVideoFeed !== null && activeVideoFeed !== idx) {
                                 const prevVideo = infiniteFeed[activeVideoFeed];
                                 if (prevVideo && viewStartTime.current) {
@@ -89,7 +88,7 @@ function VideoFeed({
                                     }
                                 }
                             }
-                            
+
                             viewStartTime.current = Date.now();
 
                             if (idx >= infiniteFeed.length - 2 && !isLoadingMoreVideos && hasMoreVideos) {
@@ -111,7 +110,7 @@ function VideoFeed({
                     Array.from(container.children).forEach(child => observer.observe(child));
                 };
                 observeChildren();
-                
+
                 const mutationObserver = new MutationObserver(() => observeChildren());
                 mutationObserver.observe(container, { childList: true });
 
@@ -153,7 +152,7 @@ function VideoFeed({
                 const rawVids = keys.map(key => {
                     const item = data[key];
                     let videoUrl = item.videoUrl || (typeof item.mediaUrl === 'string' ? item.mediaUrl : '');
-                    
+
                     if (!videoUrl && item.mediaUrls && Array.isArray(item.mediaUrls) && item.mediaUrls.length > 0) {
                         const first = item.mediaUrls[0];
                         videoUrl = typeof first === 'string' ? first : (first && first.url ? first.url : '');
@@ -226,12 +225,12 @@ function VideoFeed({
                 }} className="text-white bg-black/40 hover:bg-black/60 p-3 rounded-full backdrop-blur-md cursor-pointer pointer-events-auto transition-all">
                     <div className="icon-arrow-left text-xl"></div>
                 </button>
-                
+
                 <button onClick={toggleMute} className="text-white bg-black/40 hover:bg-black/60 p-3 rounded-full backdrop-blur-md cursor-pointer pointer-events-auto transition-all">
                     <div className={`text-xl ${isMuted ? 'icon-volume-x text-red-400' : 'icon-volume-2'}`}></div>
                 </button>
             </div>
-            
+
             <div ref={videoContainerRef} className="flex-1 w-full h-full snap-y snap-mandatory overflow-y-scroll no-scrollbar bg-black relative">
                 {infiniteFeed.map((vPost, index) => (
                     <div key={vPost.uniqueKey || vPost.id} data-index={index} className="w-full h-full snap-start snap-always relative flex items-center justify-center bg-black">
@@ -267,7 +266,7 @@ function VideoFeed({
                                 </div>
                             </div>
                         )}
-                        
+
                         <div 
                             className="absolute inset-0 z-10 cursor-pointer flex items-center justify-center" 
                             onClick={(e) => {
@@ -292,14 +291,14 @@ function VideoFeed({
                                 </div>
                             </div>
                         </div>
-                        
+
                         <style dangerouslySetInnerHTML={{__html:`
                             .paused-overlay .play-icon-overlay { opacity: 1 !important; transform: scale(1); }
                         `}} />
 
                         {/* Nova Interface - Layout dividido entre Info (Esq) e Ações (Dir) */}
                         <div className="absolute inset-0 pointer-events-none flex flex-row items-end justify-between z-20 pb-4 px-4 bg-gradient-to-t from-black/80 via-black/20 to-transparent">
-                            
+
                             {/* Info do Autor e Legenda (Esquerda) */}
                             <div className="flex-1 pr-16 text-white pointer-events-auto pb-4 max-w-[80%]">
                                 <h3 
@@ -309,15 +308,15 @@ function VideoFeed({
                                     @{(vPost.authorName || 'usuario').replace(/\s/g, '').toLowerCase()}
                                     {vPost.isVerified && <div className="icon-badge-check text-blue-400 text-sm"></div>}
                                 </h3>
-                                
+
                                 {vPost.title && (
                                     <p className="text-sm mt-2 font-medium drop-shadow-md">{vPost.title}</p>
                                 )}
-                                
+
                                 <div className="text-[15px] mt-2 text-gray-100 line-clamp-3 leading-snug font-light drop-shadow-md">
                                     {renderTextWithHashtags(vPost.content)}
                                 </div>
-                                
+
                                 {/* Info de Som/Música - Opcional se existir, ou estático */}
                                 <div className="flex items-center gap-2 mt-4 text-xs font-medium text-white/80 bg-black/30 w-max px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
                                     <div className="icon-music text-sm animate-pulse"></div>
@@ -329,22 +328,6 @@ function VideoFeed({
 
                             {/* Botões de Ação (Direita) */}
                             <div className="flex flex-col items-center gap-5 pb-6 pointer-events-auto">
-                                
-                                {/* Assinar Canal */}
-                                {vPost.authorId !== user.id && (
-                                    <button 
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSubTarget({ id: vPost.authorId, name: vPost.authorName, avatar: vPost.authorAvatar });
-                                        }}
-                                        className="flex flex-col items-center gap-1 active:scale-95 transition-transform"
-                                    >
-                                        <div className="w-12 h-[72px] bg-sky-400 hover:bg-sky-500 rounded-full flex flex-col items-center justify-center shadow-lg border-2 border-white/20">
-                                            <div className="icon-star text-white text-xl mb-1"></div>
-                                            <span className="text-[10px] font-bold text-white uppercase tracking-tighter" style={{writingMode: 'vertical-rl'}}>Assinar</span>
-                                        </div>
-                                    </button>
-                                )}
 
                                 {/* Avatar do Autor com botão de seguir */}
                                 <div className="relative mb-4">
@@ -360,7 +343,7 @@ function VideoFeed({
                                         </button>
                                     )}
                                 </div>
-                                
+
                                 {/* Curtir */}
                                 <button onClick={(e) => { 
                                     e.stopPropagation(); 
@@ -381,7 +364,7 @@ function VideoFeed({
                                     </div>
                                     <span className="text-xs text-white font-semibold drop-shadow-md">{vPost.likesCount}</span>
                                 </button>
-                                
+
                                 {/* Comentar */}
                                 <button onClick={(e) => { e.stopPropagation(); setShowVideoComments(vPost); }} className="flex flex-col items-center gap-1.5 group active:scale-90 transition-transform">
                                     <div className="w-11 h-11 rounded-full flex items-center justify-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
@@ -389,7 +372,7 @@ function VideoFeed({
                                     </div>
                                     <span className="text-xs text-white font-semibold drop-shadow-md">{vPost.commentsCount}</span>
                                 </button>
-                                
+
                                 {/* Compartilhar */}
                                 <div className="relative group">
                                     <button onClick={(e) => { e.stopPropagation(); handleShare(vPost); }} className="w-11 h-11 rounded-full flex items-center justify-center text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] active:scale-90 transition-transform">
@@ -433,17 +416,6 @@ function VideoFeed({
                 ))}
             </div>
 
-            {/* Modal de Assinatura */}
-            {subTarget && (
-                <window.ChannelSubscription
-                    creatorId={subTarget.id}
-                    creatorName={subTarget.name}
-                    creatorAvatar={subTarget.avatar}
-                    db={window.firebaseDB}
-                    onClose={() => setSubTarget(null)}
-                />
-            )}
-
             {/* Overlay de Comentários do Vídeo (Bottom Sheet) */}
             {showVideoComments && (
                 <div className="fixed inset-0 z-[200] flex flex-col justify-end pointer-events-auto">
@@ -479,7 +451,7 @@ function VideoFeed({
                                                                 delete updatedPost.comments[cId];
                                                                 updatedPost.commentsCount = Object.keys(updatedPost.comments).length;
                                                                 setShowVideoComments(updatedPost);
-                                                                
+
                                                                 setInfiniteFeed(prev => prev.map(p => {
                                                                     if (p.id === updatedPost.id) {
                                                                         return {...p, comments: updatedPost.comments, commentsCount: updatedPost.commentsCount};
@@ -533,7 +505,7 @@ function VideoFeed({
                                             updatedPost.comments[newRef.key] = newComment;
                                             updatedPost.commentsCount = Object.keys(updatedPost.comments).length;
                                             setShowVideoComments(updatedPost);
-                                            
+
                                             setInfiniteFeed(prev => prev.map(p => {
                                                 if (p.id === updatedPost.id) {
                                                     return {...p, comments: updatedPost.comments, commentsCount: updatedPost.commentsCount};
@@ -567,7 +539,7 @@ function VideoFeed({
                                             updatedPost.comments[newRef.key] = newComment;
                                             updatedPost.commentsCount = Object.keys(updatedPost.comments).length;
                                             setShowVideoComments(updatedPost);
-                                            
+
                                             setInfiniteFeed(prev => prev.map(p => {
                                                 if (p.id === updatedPost.id) {
                                                     return {...p, comments: updatedPost.comments, commentsCount: updatedPost.commentsCount};
@@ -599,7 +571,7 @@ function VideoFeed({
                         <div className="bg-[#0c0c14] p-3 rounded-lg border border-[#2a2a40] mb-6">
                             <p className="text-xs text-gray-400 break-all text-left font-mono">{pendingLink.url}</p>
                         </div>
-                        
+
                         <div className="flex gap-3">
                             <button onClick={() => setPendingLink(null)} className="flex-1 py-3 bg-[#2a2a40] text-white rounded-xl font-semibold hover:bg-[#3a3a55] transition-colors">Cancelar</button>
                             <button onClick={() => { window.open(pendingLink.url, '_blank'); setPendingLink(null); }} className="flex-1 py-3 bg-[#7c3aed] text-white rounded-xl font-semibold hover:bg-[#6d28d9] transition-colors shadow-lg shadow-purple-500/20">Acessar</button>
