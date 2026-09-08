@@ -102,6 +102,8 @@ function VideoFeed({
                         likesCount: item.likes ? Object.keys(item.likes).length : 0,
                         hasLiked: item.likes ? !!item.likes[user.id] : false,
                         commentsCount: item.comments ? Object.keys(item.comments).length : 0,
+                        views: item.views || item.viewsCount || 0,
+                        viewsFormatado: item.viewsFormatado || formatViews(item.views || item.viewsCount || 0),
                         mediaUrl: videoUrl || ''
                     };
                 })
@@ -133,6 +135,16 @@ function VideoFeed({
             postsRef.off("value", loadVideos);
         };
     }, [idToken, user.id]);
+
+    // ==========================================================
+    // FUNÇÃO PARA FORMATAR VISUALIZAÇÕES
+    // ==========================================================
+    const formatViews = (views) => {
+        if (!views) return "0";
+        if (views >= 1000000) return (views / 1000000).toFixed(1).replace('.', ',') + "M";
+        if (views >= 1000) return (views / 1000).toFixed(1).replace('.', ',') + "K";
+        return String(views);
+    };
 
     // ==========================================================
     // ATUALIZAR URL DO NAVEGADOR QUANDO O VÍDEO MUDAR
@@ -344,6 +356,12 @@ function VideoFeed({
 
                                 <div className="text-[15px] mt-2 text-gray-100 line-clamp-3 leading-snug font-light drop-shadow-md">
                                     {renderTextWithHashtags(vPost.content)}
+                                </div>
+
+                                {/* Visualizações */}
+                                <div className="flex items-center gap-2 mt-3 text-xs font-medium text-white/80">
+                                    <div className="icon-eye text-sm"></div>
+                                    <span>{vPost.viewsFormatado || formatViews(vPost.views || 0)} visualizações</span>
                                 </div>
 
                                 {/* Info de Som/Música */}
