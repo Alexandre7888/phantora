@@ -1,12 +1,12 @@
 function SocialNetwork({ user, onClose }) {
     const [posts, setPosts] = React.useState([]);
     const [stories, setStories] = React.useState([]);
-    
+
     // Pagination states
     const [lastPostKey, setLastPostKey] = React.useState(null);
     const [hasMorePosts, setHasMorePosts] = React.useState(true);
     const [isLoadingMore, setIsLoadingMore] = React.useState(false);
-    
+
     const [lastVideoKey, setLastVideoKey] = React.useState(null);
     const [hasMoreVideos, setHasMoreVideos] = React.useState(true);
     const [isLoadingMoreVideos, setIsLoadingMoreVideos] = React.useState(false);
@@ -14,7 +14,7 @@ function SocialNetwork({ user, onClose }) {
     const [editingPostId, setEditingPostId] = React.useState(null);
     const [activeCommentPost, setActiveCommentPost] = React.useState(null);
     const [commentText, setCommentText] = React.useState('');
-    
+
     // Novas funcionalidades
     const [activeVideoFeed, setActiveVideoFeed] = React.useState(null); // null or starting index
     const [infiniteFeed, setInfiniteFeed] = React.useState([]); // array of videos for infinite scroll
@@ -47,10 +47,10 @@ function SocialNetwork({ user, onClose }) {
     const [isUploading, setIsUploading] = React.useState(false);
     const [uploadProgress, setUploadProgress] = React.useState(0);
     const [uploadStatus, setUploadStatus] = React.useState('');
-    
+
     // Camera state
     const [showCamera, setShowCamera] = React.useState(false);
-    
+
     // Post Creator Modal
     const [showPostCreator, setShowPostCreator] = React.useState(false);
     const [desktopView, setDesktopView] = React.useState('feed');
@@ -60,7 +60,7 @@ function SocialNetwork({ user, onClose }) {
 
     // Profile Modal
     const [selectedUser, setSelectedUser] = React.useState(null);
-    
+
     // Settings and Friends
     const [showSettings, setShowSettings] = React.useState(false);
     const [friendSuggestions, setFriendSuggestions] = React.useState([]);
@@ -87,13 +87,16 @@ function SocialNetwork({ user, onClose }) {
         const params = new URLSearchParams(window.location.search);
         const videoId = params.get('v');
         const fromId = params.get('from');
-        
+
         if (fromId) {
-            db.ref(`users/${fromId}`).once('value').then(snap => {
-                const uData = snap.val();
-                if (uData) {
+            db.ref(`users/${fromId}/profilePicture`).once('value').then(snap => {
+                const profilePicture = snap.val();
+                if (profilePicture) {
                     setQuickShareUserId(fromId);
-                    setQuickShareUserAvatar(uData.profilePicture || null);
+                    setQuickShareUserAvatar(profilePicture);
+                } else {
+                    setQuickShareUserId(fromId);
+                    setQuickShareUserAvatar(null);
                 }
             });
         }
@@ -108,7 +111,7 @@ function SocialNetwork({ user, onClose }) {
                         if (data && data.address) {
                             const city = data.address.city || data.address.town || data.address.village || data.address.municipality || "Desconhecida";
                             const state = data.address.state || "Desconhecido";
-                            
+
                             if (city !== "Desconhecida" && state !== "Desconhecido") {
                                 await db.ref(`users/${user.id}`).update({ city: city, state: state });
                                 await db.ref(`location_users/${state}/${city}/${user.id}`).set(true);
@@ -123,7 +126,7 @@ function SocialNetwork({ user, onClose }) {
                 });
             }
         };
-        
+
         // Pedir localização automaticamente no login
         requestLocation();
 
@@ -147,16 +150,23 @@ function SocialNetwork({ user, onClose }) {
         const fetchUserData = async (uid) => {
             if (!uid) return { name: 'Usuário', avatar: 'assets/default-avatar.svg', username: 'usuario' };
             if (window._userCache && window._userCache[uid]) return window._userCache[uid];
-            
+
             try {
-                const snap = await db.ref(`users/${uid}`).once('value');
-                const uData = snap.val() || {};
+                // 1. Buscar SOMENTE a foto de perfil no caminho específico
+                const photoSnap = await db.ref(`users/${uid}/profilePicture`).once('value');
+                const profilePicture = photoSnap.val();
+
+                // 2. Buscar dados adicionais (nome, username, verificação) mas NUNCA a foto
+                const userSnap = await db.ref(`users/${uid}`).once('value');
+                const uData = userSnap.val() || {};
+
                 const result = {
                     name: uData.name || 'Usuário',
-                    avatar: uData.avatar || uData.profilePicture || 'assets/default-avatar.svg',
+                    avatar: profilePicture || 'assets/default-avatar.svg',
                     username: uData.username || (uData.name || 'usuario').toLowerCase().replace(/\s/g, ''),
                     isVerified: !!uData.isVerified
                 };
+
                 if (!window._userCache) window._userCache = {};
                 window._userCache[uid] = result;
                 return result;
@@ -171,9 +181,9 @@ function SocialNetwork({ user, onClose }) {
             for (const key of keys) {
                 const p = data[key];
                 if (p.type === 'story') continue;
-                
+
                 const uData = await fetchUserData(p.authorId);
-                
+
                 // Process comments
                 let processedComments = {};
                 if (p.comments) {
@@ -212,12 +222,12 @@ function SocialNetwork({ user, onClose }) {
                 const data = snap.val();
                 const keys = Object.keys(data);
                 const firstKey = keys[0];
-                
+
                 const postsList = await processPostsWithUsers(data);
 
                 if (keys.length < 30) setHasMorePosts(false);
                 setLastPostKey(firstKey);
-                
+
                 if (window.sortFeedByAlgorithm) {
                     const sorted = await window.sortFeedByAlgorithm(user.id, postsList);
                     setPosts(sorted);
@@ -255,7 +265,7 @@ function SocialNetwork({ user, onClose }) {
             }
         };
         calculateFollowers();
-        
+
         // Fetch Suggestions
         const fetchSuggestions = async () => {
             try {
@@ -272,11 +282,11 @@ function SocialNetwork({ user, onClose }) {
                         const userIds = Object.keys(locationSnap.val()).filter(id => id && id.trim() !== '' && id !== user.id);
                         const promises = userIds.map(id => db.ref(`users/${id}`).once('value').catch(() => null));
                         const snaps = await Promise.all(promises);
-                        
+
                         const list = snaps
                             .filter(snap => snap && snap.exists())
                             .map(snap => ({ id: snap.key, ...snap.val() }));
-                            
+
                         setFriendSuggestions(list.sort(() => 0.5 - Math.random()).slice(0, 5));
                         return;
                     }
@@ -297,20 +307,20 @@ function SocialNetwork({ user, onClose }) {
     const loadMorePosts = async () => {
         if (!hasMorePosts || isLoadingMore || !lastPostKey) return;
         setIsLoadingMore(true);
-        
+
         try {
             const db = window.firebaseDB;
             const snap = await db.ref('posts').orderByKey().endBefore(lastPostKey).limitToLast(30).once('value');
-            
+
             if (snap.exists()) {
                 const data = snap.val();
                 const keys = Object.keys(data);
-                
+
                 if (keys.length === 0) {
                     setHasMorePosts(false);
                     return;
                 }
-                
+
                 const firstKey = keys[0];
                 const newPostsList = keys.map(key => ({
                     id: key,
@@ -321,14 +331,14 @@ function SocialNetwork({ user, onClose }) {
                 })).filter(p => p.type !== 'story');
 
                 setLastPostKey(firstKey);
-                
+
                 let sortedNewPosts = newPostsList.reverse();
                 if (window.sortFeedByAlgorithm) {
                     sortedNewPosts = await window.sortFeedByAlgorithm(user.id, newPostsList);
                 }
-                
+
                 setPosts(prev => [...prev, ...sortedNewPosts]);
-                
+
                 if (keys.length < 30) setHasMorePosts(false);
             } else {
                 setHasMorePosts(false);
@@ -383,11 +393,11 @@ function SocialNetwork({ user, onClose }) {
     React.useEffect(() => {
         if (activeVideoFeed !== null && videoContainerRef.current) {
             let observer = null;
-            
+
             const initTimer = setTimeout(() => {
                 const container = videoContainerRef.current;
                 if (!container) return;
-                
+
                 const videoEl = container.children[activeVideoFeed];
                 if (videoEl) {
                     container.scrollTo({ top: videoEl.offsetTop, behavior: 'instant' });
@@ -397,7 +407,7 @@ function SocialNetwork({ user, onClose }) {
                     entries.forEach(entry => {
                         const idx = Number(entry.target.dataset.index);
                         const video = entry.target.querySelector('video');
-                        
+
                         if (entry.isIntersecting) {
                             setActiveVideoFeed(idx);
                             if (video && video.paused) {
@@ -410,7 +420,7 @@ function SocialNetwork({ user, onClose }) {
                                     }
                                 });
                             }
-                            
+
                             // Análises: Registrar tempo do vídeo anterior
                             if (activeVideoFeed !== null && activeVideoFeed !== idx) {
                                 const prevVideo = infiniteFeed[activeVideoFeed];
@@ -431,13 +441,13 @@ function SocialNetwork({ user, onClose }) {
                                     }
                                 }
                             }
-                            
+
                             viewStartTime.current = Date.now();
 
                             // Infinite scroll logic para vídeos: carrega mais 10
                             if (idx >= infiniteFeed.length - 2 && !isLoadingMoreVideos && hasMoreVideos) {
                                 setIsLoadingMoreVideos(true);
-                                
+
                                 // Buscar mais 10 vídeos no firebase se não tivermos em cache
                                 const loadMoreVids = async () => {
                                     try {
@@ -447,7 +457,7 @@ function SocialNetwork({ user, onClose }) {
                                             query = query.endBefore(lastVideoKey);
                                         }
                                         const snap = await query.limitToLast(30).once('value'); // busca mais pois precisamos filtrar por vídeo
-                                        
+
                                         if (snap.exists()) {
                                             const data = snap.val();
                                             const keys = Object.keys(data);
@@ -455,16 +465,16 @@ function SocialNetwork({ user, onClose }) {
                                                 setHasMoreVideos(false);
                                                 return;
                                             }
-                                            
+
                                             setLastVideoKey(keys[0]);
-                                            
+
                                             const rawVids = keys.map(key => ({
                                                 id: key, ...data[key],
                                                 likesCount: data[key].likes ? Object.keys(data[key].likes).length : 0,
                                                 hasLiked: data[key].likes ? !!data[key].likes[user.id] : false,
                                                 commentsCount: data[key].comments ? Object.keys(data[key].comments).length : 0,
                                             })).filter(p => p.type === 'video' || (p.mediaUrl && (p.mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i) || (p.mediaUrl.includes('file-') && p.mediaUrl.includes('-mp4')))));
-                                            
+
                                             // Se não achou vídeos suficientes, pega do cache/algoritmo
                                             let finalVids = rawVids.slice(0, 10);
                                             if (finalVids.length < 10) {
@@ -472,9 +482,9 @@ function SocialNetwork({ user, onClose }) {
                                                 if (recommended.length === 0) recommended = videoPostsRef.current;
                                                 finalVids = [...finalVids, ...recommended.slice(0, 10 - finalVids.length)];
                                             }
-                                            
+
                                             const appended = finalVids.map((v, i) => ({...v, uniqueKey: `${v.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`}));
-                                            
+
                                             setInfiniteFeed(prev => {
                                                 const newFeed = [...prev, ...appended];
                                                 const unique = [];
@@ -523,7 +533,7 @@ function SocialNetwork({ user, onClose }) {
                     });
                 };
                 observeChildren();
-                
+
                 // Set up mutation observer to watch for new appended children
                 const mutationObserver = new MutationObserver(() => observeChildren());
                 mutationObserver.observe(container, { childList: true });
@@ -607,7 +617,7 @@ function SocialNetwork({ user, onClose }) {
         try {
             const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
             const { fetchFile } = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
-            
+
             const ffmpeg = new FFmpeg();
             await ffmpeg.load({
                 coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js'
@@ -632,7 +642,7 @@ function SocialNetwork({ user, onClose }) {
             ]);
             const data = await ffmpeg.readFile(outputName);
             const videoBlob = new Blob([data.buffer], { type: 'video/mp4' });
-            
+
             return new Promise((resolve) => {
                 const reader = new FileReader();
                 reader.onloadend = () => {
@@ -663,11 +673,11 @@ function SocialNetwork({ user, onClose }) {
 
         const FIREBASE_DB_URL = 'https://data-7dc04-default-rtdb.firebaseio.com';
         const PUTER_WORKER_URL = 'https://cdn-phantora-api.puter.work';
-        
+
         const idAleatorio = (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').substring(0, 12) : Math.random().toString(36).substring(2, 14));
         const timestamp = Date.now();
         const extOriginalLimpa = file.name.split('.').pop().toLowerCase().replace(/[\.\$\#\[\]\/]/g, '');
-        
+
         let nomeAleatorio = '';
         let base64Data = '';
         let contentTypeFinal = '';
@@ -686,7 +696,7 @@ function SocialNetwork({ user, onClose }) {
                 nomeAleatorio = `file-${timestamp}-${idAleatorio}-mp4`;
                 finalPostType = 'video';
                 const resultadoVideo = await comprimirVideo(file);
-                
+
                 if (resultadoVideo) {
                     base64Data = resultadoVideo.base64;
                     contentTypeFinal = resultadoVideo.type;
@@ -759,7 +769,7 @@ function SocialNetwork({ user, onClose }) {
         if (!urlDaMidia || !urlDaMidia.includes('cdn-phantora-api.puter.work')) return;
         const partes = urlDaMidia.split("/");
         const filename = partes[partes.length - 1];
-        
+
         try {
             const response = await fetch("https://cdn-phantora-api.puter.work/manage", {
                 method: "POST",
@@ -791,7 +801,7 @@ function SocialNetwork({ user, onClose }) {
                 if (post.audioId) await window.firebaseDB.ref(`audios/${post.audioId}`).remove();
                 if (post.pollCdnUrl) await deletarArquivoCDN(post.pollCdnUrl);
             }
-            
+
             await window.firebaseDB.ref(`posts/${postId}`).remove();
             showToast("Post excluído!");
         }
@@ -834,7 +844,7 @@ function SocialNetwork({ user, onClose }) {
                 await likeRef.remove();
             } else {
                 await likeRef.set(true);
-                
+
                 const post = posts.find(p => p.id === postId);
                 if (post && post.hashtags && window.updateAlgorithmProfile) {
                     window.updateAlgorithmProfile(user.id, 'like', post.hashtags, 2);
@@ -849,7 +859,7 @@ function SocialNetwork({ user, onClose }) {
     const handleAddComment = async (postId) => {
         if (!commentText.trim()) return;
         const db = window.firebaseDB;
-        
+
         try {
             await db.ref(`posts/${postId}/comments`).push({
                 authorId: user.id,
@@ -875,14 +885,14 @@ function SocialNetwork({ user, onClose }) {
 
     const handleShareToChat = async (chatId, type) => {
         if (!postToShare || !window.firebaseDB) return;
-        
+
         setSharingTo(prev => ({ ...prev, [chatId]: true }));
-        
+
         try {
             const targetId = contacts.find(c => c.id === chatId)?.targetId || chatId;
             const refPath = type === 'group' ? `groups/${chatId}/messages` : `chats/${[user.id, targetId].sort().join('_')}/messages`;
             const shareUrl = `${window.location.origin}${window.location.pathname.replace('chat.html', 'index.html').replace('social.html', 'index.html')}?v=${postToShare.id}&from=${user.id}`;
-            
+
             const msgData = {
                 senderId: user.id,
                 senderName: user.name,
@@ -893,9 +903,9 @@ function SocialNetwork({ user, onClose }) {
                 postAuthor: postToShare.authorName,
                 timestamp: Date.now()
             };
-            
+
             await window.firebaseDB.ref(refPath).push(msgData);
-            
+
             // Update last message
             const chatUpdate = { lastMessage: `🎬 Vídeo compartilhado`, timestamp: Date.now() };
             if (type === 'group') {
@@ -916,7 +926,7 @@ function SocialNetwork({ user, onClose }) {
             setTimeout(() => {
                 setSharedSuccess(prev => ({ ...prev, [chatId]: false }));
             }, 2000);
-            
+
         } catch (e) {
             console.error(e);
             showToast("Erro ao compartilhar.");
@@ -950,10 +960,10 @@ function SocialNetwork({ user, onClose }) {
                 }
             }
             if (!targetChatId) targetChatId = quickShareUserId; // fallback
-            
+
             const refPath = `chats/${[user.id, quickShareUserId].sort().join('_')}/messages`;
             const shareUrl = `${window.location.origin}${window.location.pathname}?v=${currentPost.id}&from=${user.id}`;
-            
+
             await window.firebaseDB.ref(refPath).push({
                 senderId: user.id,
                 senderName: user.name,
@@ -1020,8 +1030,6 @@ function SocialNetwork({ user, onClose }) {
         const diffInDays = Math.floor(diffInHours / 24);
         return `há ${diffInDays} d`;
     };
-
-
 
     const renderTextWithHashtags = (text) => {
         if (!text) return null;
@@ -1097,7 +1105,7 @@ function SocialNetwork({ user, onClose }) {
                         </div>
                     </div>
                 </div>
-                
+
                 <div className="flex items-center gap-1 sm:gap-2">
                     <button onClick={() => {
                         if (window.requestUserLocation) window.requestUserLocation();
@@ -1123,7 +1131,7 @@ function SocialNetwork({ user, onClose }) {
                 <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'}`}>
                     <div className="icon-house text-2xl"></div>
                 </button>
-                
+
                 <button onClick={() => setDesktopView('chat')} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'chat' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'}`}>
                     <div className="icon-message-circle text-2xl"></div>
                 </button>
@@ -1144,7 +1152,7 @@ function SocialNetwork({ user, onClose }) {
                 }} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95">
                     <div className="icon-circle-play text-2xl"></div>
                 </button>
-                
+
                 <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95">
                     <div className="icon-user text-2xl"></div>
                 </button>
@@ -1158,7 +1166,7 @@ function SocialNetwork({ user, onClose }) {
                 <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`p-3 rounded-xl transition-all ${desktopView === 'feed' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-tertiary hover:text-text-primary'}`} title="Início">
                     <div className="icon-house text-2xl"></div>
                 </button>
-                
+
                 <button onClick={() => setDesktopView('chat')} className={`p-3 rounded-xl transition-all ${desktopView === 'chat' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-tertiary hover:text-text-primary'}`} title="Mensagens">
                     <div className="icon-message-circle text-2xl"></div>
                 </button>
@@ -1187,7 +1195,7 @@ function SocialNetwork({ user, onClose }) {
                     <div className="icon-settings text-2xl"></div>
                 </button>
             </div>
-            
+
             {showSettings && (
                 typeof window.SettingsMenu !== 'undefined' ? (
                     <window.SettingsMenu isOpen={true} onClose={() => setShowSettings(false)} />
@@ -1235,11 +1243,11 @@ function SocialNetwork({ user, onClose }) {
                     <button onClick={() => setActiveStory(null)} className="absolute top-4 right-4 z-10 text-white p-2">
                         <div className="icon-x text-2xl"></div>
                     </button>
-                    
+
                     <div className="flex-1 flex items-center justify-center relative cursor-pointer">
                         <div className="absolute left-0 top-0 w-1/3 h-full z-10" onClick={(e) => { e.stopPropagation(); setActiveStory(prev => prev > 0 ? prev - 1 : prev); }}></div>
                         <div className="absolute right-0 top-0 w-1/3 h-full z-10" onClick={(e) => { e.stopPropagation(); setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null); }}></div>
-                        
+
                         {(stories[activeStory].mediaUrl?.match(/\.(mp4|webm|ogg|mov)$/i) || stories[activeStory].type === 'video') ? (
                             <video src={stories[activeStory].mediaUrl} autoPlay playsInline className="max-w-full max-h-full object-contain" onEnded={() => setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null)} />
                         ) : (
@@ -1265,7 +1273,7 @@ function SocialNetwork({ user, onClose }) {
                             <img src={selectedUser.avatar || 'assets/default-avatar.svg'} alt="Profile" className="w-24 h-24 rounded-full object-cover mx-auto border-4 border-indigo-100 mb-4" />
                             <h3 className="text-xl font-bold">{selectedUser.name || 'Usuário'}</h3>
                             <p className={`text-sm ${textMuted} mb-6`}>@{(selectedUser.name || 'usuario').toLowerCase().replace(/\s/g, '')}</p>
-                            
+
 
                         </div>
                     </div>
@@ -1334,7 +1342,7 @@ function SocialNetwork({ user, onClose }) {
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 {post.authorId === user.id && (
                                     <div className="flex gap-2">
                                         <button onClick={() => handleDeletePost(post.id)} className={`${textMuted} hover:text-danger p-1 transition-colors`}>
@@ -1343,7 +1351,7 @@ function SocialNetwork({ user, onClose }) {
                                     </div>
                                 )}
                             </div>
-                            
+
                             {post.title && (
                                 <div className="px-4 pt-2 pb-1 font-bold text-lg break-words text-primary">
                                     {post.title}
@@ -1362,7 +1370,7 @@ function SocialNetwork({ user, onClose }) {
                                     }
                                     return null;
                                 }
-                                
+
                                 if (post.type === 'carousel' && post.mediaUrls) {
                                     return (
                                         <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
@@ -1394,7 +1402,7 @@ function SocialNetwork({ user, onClose }) {
 
                                 const url = post.mediaUrl || (post.mediaUrls && post.mediaUrls[0]);
                                 if (!url) return null;
-                                
+
                                 const ytId = getYoutubeId(url);
                                 if (ytId) {
                                     return (
@@ -1413,15 +1421,15 @@ function SocialNetwork({ user, onClose }) {
                                         </div>
                                     );
                                 }
-                                
+
                                 const isVideo = post.type === 'video' || url.match(/\.(mp4|webm|ogg|mov)$/i) || (url.includes('file-') && url.includes('-mp4'));
-                                
+
                                 if (isVideo) {
                                     return (
                                         <div className="w-full bg-black flex justify-center items-center relative cursor-pointer group" onClick={() => {
                                             const idx = videoPosts.findIndex(vp => vp.id === post.id);
                                             const startIdx = idx !== -1 ? idx : 0;
-                                            
+
                                             // Ensure infinite feed starts with our initial list
                                             const initialList = videoPosts.map(v => ({...v, uniqueKey: v.id}));
                                             setInfiniteFeed(initialList);
@@ -1436,11 +1444,11 @@ function SocialNetwork({ user, onClose }) {
                                         </div>
                                     );
                                 }
-                                
+
                                 if (post.type === 'image' || url) {
                                     return <img src={url} alt="Post media" className={`w-full max-h-[500px] object-contain bg-primary border-t border-b border-border`} loading="lazy" />;
                                 }
-                                
+
                                 if (post.type === 'poll' && post.pollCdnUrl) {
                                     return <PollViewer key={`poll-${post.id}`} post={post} user={user} />;
                                 }
@@ -1457,7 +1465,7 @@ function SocialNetwork({ user, onClose }) {
                                             <div className={`icon-heart text-xl ${post.hasLiked ? 'fill-current' : ''}`}></div>
                                             <span className="text-sm font-semibold">{post.likesCount}</span>
                                         </button>
-                                        
+
                                         <button 
                                             onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)}
                                             className="flex items-center gap-2 hover:text-accent transition-colors"
@@ -1466,7 +1474,7 @@ function SocialNetwork({ user, onClose }) {
                                             <span className="text-sm font-semibold">{post.commentsCount}</span>
                                         </button>
                                     </div>
-                                    
+
                                 <button onClick={() => handleShare(post)} className="hover:text-accent transition-colors">
                                     <div className="icon-share-2 text-xl"></div>
                                 </button>
@@ -1493,7 +1501,7 @@ function SocialNetwork({ user, onClose }) {
                                             Enviar
                                         </button>
                                     </div>
-                                    
+
                                     <div className="space-y-4 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                                         {post.comments && Object.keys(post.comments).map(cId => {
                                             const comment = post.comments[cId];
@@ -1531,7 +1539,7 @@ function SocialNetwork({ user, onClose }) {
                         </div>
                     ))
                 )}
-                
+
                 {isLoadingMore && (
                     <div className="flex justify-center py-4">
                         <div className="icon-loader animate-spin text-accent text-3xl"></div>
@@ -1581,7 +1589,7 @@ function SocialNetwork({ user, onClose }) {
                                 <div className="icon-x text-xl"></div>
                             </button>
                         </div>
-                        
+
                         <div className="p-4 flex gap-4 overflow-x-auto pb-4 border-b border-gray-100 dark:border-gray-700 scrollbar-hide">
                             <button onClick={() => {
                                 const shareUrl = `${window.location.origin}${window.location.pathname}?v=${postToShare.id}`;
@@ -1657,7 +1665,7 @@ function SocialNetwork({ user, onClose }) {
                         <h3 className="text-xl font-bold text-white mb-2">Sair do Phantora?</h3>
                         <p className="text-gray-300 text-sm mb-6">Você tem certeza que deseja entrar nesse link?</p>
                         <p className="text-xs text-gray-500 mb-6 break-all bg-gray-900 p-2 rounded">{pendingLink.url}</p>
-                        
+
                         <div className="flex gap-3">
                             <button 
                                 onClick={() => setPendingLink(null)} 
