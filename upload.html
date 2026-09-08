@@ -1,36 +1,375 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Publicar - Phantora</title>
-    <meta name="theme-color" content="#111827">
-    
-    <link rel="icon" type="image/png" href="https://app.trickle.so/storage/public/images/usr_1b4249e300000001/69bb1bd2-fc92-4f38-85f2-a598ae69ef5e.1000336397">
-    <script src="https://resource.trickle.so/vendor_lib/unpkg/react@18/umd/react.production.min.js"></script>
-    <script src="https://resource.trickle.so/vendor_lib/unpkg/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://resource.trickle.so/vendor_lib/unpkg/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://resource.trickle.so/vendor_lib/unpkg/lucide-static@0.516.0/font/lucide.css" rel="stylesheet">
-    <link rel="stylesheet" href="global.css">
-    
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phantora</title>
 
-    <style type="text/tailwindcss">
-    @layer theme { :root { --primary: #667eea; --secondary: #764ba2; } }
-    @layer base { body { background-color: #0a0a0f; color: #f0f0f5; font-family: 'Inter', system-ui, sans-serif; overflow: hidden; } }
-    </style>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, sans-serif; background: #111; color: white; }
+header { position: sticky; top: 0; z-index: 10; background: #181818; padding: 15px; border-bottom: 1px solid #333; }
+#status { font-size: 13px; color: #aaa; }
+#user { font-size: 12px; color: #777; margin-top: 4px; }
+#uploadBox { max-width: 700px; margin: 15px auto; padding: 15px; background: #1b1b1b; border-radius: 12px; }
+#uploadBox h2 { margin-top: 0; }
+input, textarea, select, button { width: 100%; margin-top: 10px; padding: 12px; border: 0; border-radius: 8px; font-family: Arial, sans-serif; }
+textarea { resize: vertical; min-height: 90px; }
+button { background: #fff; color: #111; font-weight: bold; cursor: pointer; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+#uploadStatus { margin-top: 10px; font-size: 13px; color: #aaa; }
+#posts { max-width: 700px; margin: auto; padding: 10px; }
+.post { background: #1b1b1b; border-radius: 12px; margin-bottom: 15px; overflow: hidden; }
+.postHeader { padding: 15px; }
+.title { font-size: 18px; font-weight: bold; }
+.description { margin-top: 6px; color: #bbb; }
+.author { margin-top: 8px; font-size: 12px; color: #777; }
+.media { width: 100%; display: block; background: #000; }
+video { width: 100%; max-height: 600px; display: block; }
+img { width: 100%; display: block; }
+.text { padding: 15px; white-space: pre-wrap; word-break: break-word; }
+.info { padding: 12px 15px; color: #999; font-size: 13px; }
+.loading { text-align: center; padding: 40px; color: #999; }
+.error { color: #ff6b6b; padding: 20px; }
+.success { color: #6bff9c; }
+
+/* Mini interface acima do botão + (desktop) */
+.fab-menu {
+  position: fixed;
+  right: 24px;
+  bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  z-index: 60;
+}
+.fab {
+  width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg,#3b82f6,#2563eb);
+  color: white; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  cursor: pointer; border: 4px solid rgba(255,255,255,0.04);
+}
+.fab-menu .option {
+  background: #0f1724; color: #e6eef8; padding: 10px 14px; border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.4); cursor: pointer; white-space: nowrap;
+  transform-origin: right bottom; transition: transform .18s ease, opacity .18s ease;
+  opacity: 0; transform: translateY(8px) scale(.95); pointer-events: none;
+}
+.fab-menu.open .option { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+/* Desktop modal for finer controls */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 70; }
+.modal-backdrop.open { display: flex; }
+.modal { background: #0b1020; padding: 20px; border-radius: 12px; width: 640px; max-width: 95%; color: #e6eef8; box-shadow: 0 10px 40px rgba(2,6,23,.8); }
+.modal h3 { margin: 0 0 12px 0; }
+.modal .row { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+.modal .row button { width: auto; padding: 10px 14px; }
+@media (max-width: 768px) { .fab-menu { right: 16px; bottom: 18px; } .modal { width: 92%; } }
+</style>
 </head>
 <body>
-    <div id="root"></div>
-    <script type="text/babel" src="utils/api.js"></script>
-    <script type="text/babel" src="utils/firebase-init.js"></script>
-    <script type="text/babel" src="components/CameraCapture.js"></script>
-    <script type="text/babel" src="components/MediaEditor.js"></script>
-    <script type="text/babel" src="components/PostCreator.js"></script>
-    <script type="text/babel" src="upload-app.js"></script>
+
+<header>
+  <div>Phantora</div>
+  <div id="status">Carregando...</div>
+  <div id="user"></div>
+</header>
+
+<div id="uploadBox">
+  <h2>Criar post</h2>
+
+  <input id="title" type="text" placeholder="Título" maxlength="200">
+  <textarea id="description" placeholder="Descrição" maxlength="2000"></textarea>
+
+  <select id="postType">
+    <option value="auto">Detectar automaticamente</option>
+    <option value="video">Vídeo</option>
+    <option value="image">Imagem</option>
+    <option value="text">Texto</option>
+    <option value="poll">Enquete</option>
+  </select>
+
+  <textarea id="textContent" placeholder="Conteúdo do texto (somente para post de texto)"></textarea>
+
+  <div id="pollOptions" style="display:none;">
+    <input id="pollChoice1" placeholder="Opção 1">
+    <input id="pollChoice2" placeholder="Opção 2">
+    <div style="display:flex; gap:8px;">
+      <button type="button" onclick="addPollOption()">Adicionar opção</button>
+      <button type="button" onclick="resetPoll()">Limpar enquete</button>
+    </div>
+  </div>
+
+  <input id="file" type="file" accept="video/*,image/*,.txt,.html,.json,.xml,.csv">
+  <button id="uploadButton" onclick="criarPost()" disabled>Publicar</button>
+  <div id="uploadStatus"></div>
+</div>
+
+<!-- Mini interface (floating) acima do botão + -->
+<div class="fab-menu" id="fabMenu">
+  <div class="option" data-type="text">Publicar texto</div>
+  <div class="option" data-type="image">Publicar imagem</div>
+  <div class="option" data-type="video">Publicar vídeo</div>
+  <div class="option" data-type="poll">Criar enquete</div>
+  <div class="fab" id="fabToggle">+</div>
+</div>
+
+<!-- Modal desktop para publicar -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3>Novo post — Opções</h3>
+    <div class="row">
+      <label><input type="radio" name="mode" value="text" checked> Texto</label>
+      <label><input type="radio" name="mode" value="image"> Imagem</label>
+      <label><input type="radio" name="mode" value="video"> Vídeo</label>
+      <label><input type="radio" name="mode" value="poll"> Enquete</label>
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button onclick="closeModal()">Fechar</button>
+      <button onclick="applyModal()">Usar</button>
+    </div>
+  </div>
+</div>
+
+<div id="posts">
+  <div class="loading">Carregando...</div>
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+
+<script>
+/* --- Lógica UI: mini interface e modal --- */
+const fabToggle = document.getElementById('fabToggle');
+const fabMenu = document.getElementById('fabMenu');
+const modalBackdrop = document.getElementById('modalBackdrop');
+const postType = document.getElementById('postType');
+const pollOptions = document.getElementById('pollOptions');
+
+fabToggle.addEventListener('click', () => {
+  fabMenu.classList.toggle('open');
+});
+document.querySelectorAll('#fabMenu .option').forEach(opt => {
+  opt.addEventListener('click', () => {
+    const t = opt.getAttribute('data-type');
+    if (t === 'poll') {
+      postType.value = 'poll';
+      pollOptions.style.display = 'block';
+    } else {
+      postType.value = t;
+      pollOptions.style.display = 'none';
+    }
+    // abrir modal para opções avançadas em desktop
+    if (window.innerWidth >= 900) {
+      openModal();
+    } else {
+      // scroll to upload box on mobile
+      document.getElementById('title').focus();
+    }
+    fabMenu.classList.remove('open');
+  });
+});
+
+function openModal() { modalBackdrop.classList.add('open'); }
+function closeModal() { modalBackdrop.classList.remove('open'); }
+function applyModal() {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  postType.value = mode;
+  pollOptions.style.display = mode === 'poll' ? 'block' : 'none';
+  closeModal();
+}
+
+/* Poll helpers */
+let pollCount = 2;
+function addPollOption() {
+  pollCount++;
+  const input = document.createElement('input');
+  input.placeholder = 'Opção ' + pollCount;
+  input.id = 'pollChoice' + pollCount;
+  pollOptions.insertBefore(input, pollOptions.children[pollOptions.children.length - 2]);
+}
+function resetPoll(){
+  pollOptions.querySelectorAll('input').forEach((el,i)=>{ if(i>1) el.remove(); });
+  pollCount = 2;
+}
+
+/* --- Firebase + upload logic (mantive a estrutura existente) --- */
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDon4WbCbe4kCkUq-OdLBRhzhMaUObbAfo",
+  authDomain: "html-15e80.firebaseapp.com",
+  databaseURL: "https://html-15e80-default-rtdb.firebaseio.com",
+  projectId: "html-15e80",
+  storageBucket: "html-15e80.firebasestorage.app",
+  messagingSenderId: "1068148640439",
+  appId: "1:1068148640439:web:1ac651348e624f6be41b32",
+  measurementId: "G-7E1VWN07GM"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.database();
+
+const CDN = "https://cdn-phantora-api.puter.work";
+const uploadButton = document.getElementById("uploadButton");
+const uploadStatus = document.getElementById("uploadStatus");
+let currentUser = null;
+let idToken = null;
+
+async function atualizarToken() {
+  if (!currentUser) return null;
+  try { idToken = await currentUser.getIdToken(true); return idToken; } catch (e) { console.error("Erro ao obter token:", e); return null; }
+}
+
+auth.onAuthStateChanged(async user => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('status').textContent = 'Autenticado';
+    document.getElementById('user').textContent = 'UID: ' + user.uid;
+    await atualizarToken();
+    uploadButton.disabled = false;
+    carregarPosts();
+    return;
+  }
+  document.getElementById('status').textContent = 'Não autenticado';
+  document.getElementById('user').textContent = '';
+  uploadButton.disabled = true;
+  document.getElementById('posts').innerHTML = '<div class="error">Você precisa fazer login para ver e criar posts.<br><br>Adicione um sistema de login no Firebase.</div>';
+});
+
+setInterval(async () => { if (currentUser) await atualizarToken(); }, 30 * 60 * 1000);
+
+function cdnUrl(url) {
+  if (!url) return "";
+  try { const u = new URL(url); u.searchParams.set("auth", idToken); return u.toString(); } catch (e) { return url + (url.includes("?") ? "&" : "?") + "auth=" + encodeURIComponent(idToken); }
+}
+
+async function criarPost() {
+  if (!currentUser) { uploadStatus.textContent = "Você ainda não está autenticado."; return; }
+  uploadButton.disabled = true;
+  uploadStatus.className = "";
+  uploadStatus.textContent = "Preparando publicação...";
+  try {
+    await atualizarToken();
+    if (!idToken) throw new Error("Não foi possível obter o ID Token.");
+    const title = document.getElementById("title").value.trim();
+    const description = document.getElementById("description").value.trim();
+    let selectedType = document.getElementById("postType").value;
+    const textContent = document.getElementById("textContent").value;
+    const fileInput = document.getElementById("file");
+    const file = fileInput.files[0] || null;
+    if (!title) throw new Error("Digite um título.");
+    if (selectedType === "text" && !textContent.trim()) throw new Error("Digite o conteúdo do texto.");
+    if (!file && selectedType !== "text" && selectedType !== "poll") throw new Error("Selecione um arquivo.");
+    if (selectedType === "poll") {
+      // coletar opções de enquete
+      const choices = [];
+      pollOptions.querySelectorAll('input').forEach(i => { const v=i.value.trim(); if(v) choices.push(v); });
+      if (choices.length < 2) throw new Error("Adicione pelo menos duas opções para a enquete.");
+      // postar enquete diretamente no Realtime DB (exemplo simplificado)
+      const postRef = db.ref('posts').push();
+      await postRef.set({
+        title, description, type: 'poll', authorId: currentUser.uid, timestamp: Date.now(), poll: { choices, votes: {} }
+      });
+      uploadStatus.className = 'success';
+      uploadStatus.textContent = 'Enquete publicada! ID: ' + postRef.key;
+      resetForm();
+      carregarPosts();
+      uploadButton.disabled = false;
+      return;
+    }
+    let type = selectedType;
+    if (type === "auto" && file) {
+      if (file.type.startsWith("video/")) type = "video";
+      else if (file.type.startsWith("image/")) type = "image";
+      else type = file.type || "application/octet-stream";
+    }
+    const form = new FormData();
+    if (file) form.append("file", file);
+    form.append("title", title);
+    form.append("description", description);
+    form.append("type", type);
+    form.append("textContent", textContent);
+    const uploadUrl = CDN + "/upload?auth=" + encodeURIComponent(idToken);
+    uploadStatus.textContent = "Enviando arquivo...";
+    const response = await fetch(uploadUrl, { method: "POST", body: form });
+    const result = await response.json();
+    if (!response.ok || result.success !== true) throw new Error(result.error || "Falha no upload.");
+    uploadStatus.className = "success";
+    uploadStatus.textContent = "Post publicado! ID: " + (result.postId || "gerado");
+    resetForm();
+    setTimeout(() => carregarPosts(), 500);
+  } catch (e) {
+    console.error("UPLOAD ERROR:", e);
+    uploadStatus.className = "error";
+    uploadStatus.textContent = e.message || "Erro ao publicar.";
+  } finally { uploadButton.disabled = false; }
+}
+
+function resetForm() {
+  document.getElementById("title").value = "";
+  document.getElementById("description").value = "";
+  document.getElementById("textContent").value = "";
+  document.getElementById("file").value = "";
+  resetPoll();
+  postType.value = "auto";
+}
+
+/* carregarPosts / renderPost: mantive a lógica já existente (resumida para compactar) */
+function carregarPosts() {
+  if (!currentUser) return;
+  const postsElement = document.getElementById('posts');
+  postsElement.innerHTML = '<div class="loading">Carregando posts...</div>';
+  const postsRef = db.ref("posts");
+  postsRef.on("value", snapshot => {
+    const data = snapshot.val();
+    postsElement.innerHTML = "";
+    if (!data) { postsElement.innerHTML = '<div class="loading">Nenhum post encontrado.</div>'; return; }
+    const posts = Object.entries(data);
+    posts.sort((a,b) => Number(b[1].timestamp||0) - Number(a[1].timestamp||0));
+    for (const [postId, post] of posts) renderPost(postId, post);
+  }, error => { postsElement.innerHTML = '<div class="error">Erro ao carregar os posts: ' + (error.message||'') + '</div>'; });
+}
+
+function renderPost(postId, post) {
+  const postsElement = document.getElementById('posts');
+  if (!post || typeof post !== 'object') return;
+  const element = document.createElement('article'); element.className = 'post';
+  const header = document.createElement('div'); header.className = 'postHeader';
+  const title = document.createElement('div'); title.className = 'title'; title.textContent = post.title || 'Sem título';
+  const description = document.createElement('div'); description.className = 'description'; description.textContent = post.description || '';
+  const author = document.createElement('div'); author.className = 'author'; author.textContent = 'Autor: ' + (post.authorId || 'desconhecido');
+  header.appendChild(title); if(post.description) header.appendChild(description); header.appendChild(author);
+  element.appendChild(header);
+  if((post.type||'').toLowerCase() === 'text') {
+    const text = document.createElement('div'); text.className='text'; text.textContent = post.textContent||post.content||'';
+    element.appendChild(text);
+  } else if ((post.type||'').toLowerCase()==='poll' && post.poll) {
+    const p = document.createElement('div'); p.className='text'; p.innerHTML = '<strong>Enquete:</strong><br>' + (post.poll.choices||[]).map((c,i)=>`${i+1}. ${c}`).join('<br>');
+    element.appendChild(p);
+  } else {
+    const urls = post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : []);
+    for (const originalUrl of urls) {
+      if (!originalUrl) continue;
+      const authenticatedUrl = cdnUrl(originalUrl);
+      if ((post.type||'').toLowerCase()==='video') {
+        const video = document.createElement('video'); video.className='media'; video.controls=true; video.playsInline=true; video.preload='metadata'; video.src=authenticatedUrl; element.appendChild(video);
+      } else {
+        const img = document.createElement('img'); img.className='media'; img.loading='lazy'; img.src=authenticatedUrl; img.alt = post.title || 'Imagem'; element.appendChild(img);
+      }
+    }
+  }
+  const info = document.createElement('div'); info.className='info'; info.textContent = '👁 ' + (post.viewsFormatado||0) + ' visualizações';
+  element.appendChild(info);
+  postsElement.appendChild(element);
+}
+
+/* Escape simples */
+function escapeHtml(value){ const div=document.createElement('div'); div.textContent=String(value); return div.innerHTML; }
+</script>
+
 </body>
 </html>
