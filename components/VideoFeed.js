@@ -25,6 +25,7 @@ function VideoFeed({
     const [showVideoComments, setShowVideoComments] = React.useState(null);
     const [commentText, setCommentText] = React.useState('');
     const [idToken, setIdToken] = React.useState(null);
+    const [pausedVideos, setPausedVideos] = React.useState({});
 
     const videoContainerRef = React.useRef(null);
     const viewStartTime = React.useRef(null);
@@ -190,8 +191,8 @@ function VideoFeed({
                                     setIsMuted(true);
                                     video.muted = true;
                                     video.play().catch(() => {
-                                        const overlay = entry.target.querySelector('.play-icon-overlay');
-                                        if (overlay) overlay.style.opacity = '1';
+                                        // Se não conseguir dar play, marca como pausado
+                                        setPausedVideos(prev => ({...prev, [idx]: true}));
                                     });
                                 });
                             }
@@ -252,6 +253,21 @@ function VideoFeed({
         });
     };
 
+    const togglePlayPause = (index, e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const vid = document.getElementById(`tiktok-video-${index}`);
+        if (vid) {
+            if (vid.paused) {
+                vid.play().catch(err => console.error("Play failed", err));
+                setPausedVideos(prev => ({...prev, [index]: false}));
+            } else {
+                vid.pause();
+                setPausedVideos(prev => ({...prev, [index]: true}));
+            }
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black z-[90] flex flex-col animate-fade-in-up">
             {/* Header controls */}
@@ -275,6 +291,7 @@ function VideoFeed({
             <div ref={videoContainerRef} className="flex-1 w-full h-full snap-y snap-mandatory overflow-y-scroll no-scrollbar bg-black relative">
                 {infiniteFeed.map((vPost, index) => (
                     <div key={vPost.uniqueKey || vPost.id} data-index={index} className="w-full h-full snap-start snap-always relative flex items-center justify-center bg-black">
+                        {/* Vídeo */}
                         {activeVideoFeed !== null && Math.abs(index - activeVideoFeed) <= 2 ? (
                             <>
                                 <video 
@@ -287,15 +304,34 @@ function VideoFeed({
                                     autoPlay={index === activeVideoFeed}
                                     id={`tiktok-video-${index}`}
                                     onWaiting={() => setBufferingVideos(prev => ({...prev, [index]: true}))}
-                                    onPlaying={() => setBufferingVideos(prev => ({...prev, [index]: false}))}
+                                    onPlaying={() => {
+                                        setBufferingVideos(prev => ({...prev, [index]: false}));
+                                        setPausedVideos(prev => ({...prev, [index]: false}));
+                                    }}
                                     onCanPlay={() => setBufferingVideos(prev => ({...prev, [index]: false}))}
                                     onLoadStart={() => setBufferingVideos(prev => ({...prev, [index]: true}))}
                                     onLoadedData={() => setBufferingVideos(prev => ({...prev, [index]: false}))}
+                                    onPause={() => setPausedVideos(prev => ({...prev, [index]: true}))}
+                                    onPlay={() => setPausedVideos(prev => ({...prev, [index]: false}))}
                                 />
+                                
+                                {/* Spinner de carregamento (aparece apenas enquanto carrega) */}
                                 {bufferingVideos[index] && (
                                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                                         <div className="w-16 h-16 bg-black/30 rounded-full flex items-center justify-center backdrop-blur-lg border border-white/10">
                                             <div className="icon-loader animate-spin text-white text-3xl"></div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Botão de play (aparece apenas quando pausado e não está carregando) */}
+                                {pausedVideos[index] && !bufferingVideos[index] && (
+                                    <div 
+                                        className="absolute inset-0 flex items-center justify-center z-10 cursor-pointer"
+                                        onClick={(e) => togglePlayPause(index, e)}
+                                    >
+                                        <div className="w-24 h-24 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md shadow-2xl border border-white/20">
+                                            <div className="icon-play text-white text-5xl ml-2 opacity-90"></div>
                                         </div>
                                     </div>
                                 )}
@@ -307,35 +343,6 @@ function VideoFeed({
                                 </div>
                             </div>
                         )}
-
-                        <div 
-                            className="absolute inset-0 z-10 cursor-pointer flex items-center justify-center" 
-                            onClick={(e) => {
-                                if (e.detail === 0 && e.clientX === 0 && e.clientY === 0) return;
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const vid = document.getElementById(`tiktok-video-${index}`);
-                                if (vid) {
-                                    if (vid.paused) {
-                                        vid.play().catch(err => console.error("Play failed", err));
-                                        e.currentTarget.classList.remove('paused-overlay');
-                                    } else {
-                                        vid.pause();
-                                        e.currentTarget.classList.add('paused-overlay');
-                                    }
-                                }
-                            }}
-                        >
-                            <div className="opacity-0 transition-opacity duration-300 play-icon-overlay pointer-events-none transform scale-150">
-                                <div className="w-24 h-24 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md shadow-2xl border border-white/20">
-                                    <div className="icon-play text-white text-5xl ml-2 opacity-90"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <style dangerouslySetInnerHTML={{__html:`
-                            .paused-overlay .play-icon-overlay { opacity: 1 !important; transform: scale(1); }
-                        `}} />
 
                         {/* Nova Interface - Layout dividido entre Info (Esq) e Ações (Dir) */}
                         <div className="absolute inset-0 pointer-events-none flex flex-row items-end justify-between z-20 pb-4 px-4 bg-gradient-to-t from-black/80 via-black/20 to-transparent">
