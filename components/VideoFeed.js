@@ -24,10 +24,119 @@ function VideoFeed({
     const [isMuted, setIsMuted] = React.useState(false);
     const [showVideoComments, setShowVideoComments] = React.useState(null);
     const [commentText, setCommentText] = React.useState('');
+    const [idToken, setIdToken] = React.useState(null);
 
     const videoContainerRef = React.useRef(null);
     const viewStartTime = React.useRef(null);
 
+    // ==========================================================
+    // OBTER TOKEN DO USUÁRIO AUTENTICADO
+    // ==========================================================
+    React.useEffect(() => {
+        const auth = window.firebaseAuth || firebase.auth();
+        if (auth.currentUser) {
+            auth.currentUser.getIdToken(true).then(token => {
+                setIdToken(token);
+            }).catch(err => {
+                console.error("Erro ao obter token:", err);
+            });
+        }
+
+        const unsubscribe = auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                const token = await user.getIdToken(true);
+                setIdToken(token);
+            } else {
+                setIdToken(null);
+            }
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    // ==========================================================
+    // ADICIONAR TOKEN À URL PARA ACESSO AUTENTICADO
+    // ==========================================================
+    const cdnUrl = (url) => {
+        if (!url) return "";
+        try {
+            const u = new URL(url);
+            u.searchParams.set("auth", idToken);
+            return u.toString();
+        } catch (e) {
+            return url + (url.includes("?") ? "&" : "?") + "auth=" + encodeURIComponent(idToken);
+        }
+    };
+
+    // ==========================================================
+    // CARREGAR VÍDEOS DO BANCO DE DADOS EM TEMPO REAL
+    // ==========================================================
+    React.useEffect(() => {
+        if (!idToken) return;
+
+        const db = window.firebaseDB;
+        const postsRef = db.ref("posts");
+
+        const loadVideos = (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                setHasMoreVideos(false);
+                return;
+            }
+
+            const posts = Object.entries(data);
+
+            // Filtrar apenas vídeos e shorts
+            const videoPosts = posts
+                .map(([key, item]) => {
+                    let videoUrl = item.videoUrl || (typeof item.mediaUrl === 'string' ? item.mediaUrl : '');
+
+                    if (!videoUrl && item.mediaUrls && Array.isArray(item.mediaUrls) && item.mediaUrls.length > 0) {
+                        const first = item.mediaUrls[0];
+                        videoUrl = typeof first === 'string' ? first : (first && first.url ? first.url : '');
+                    }
+
+                    return {
+                        id: key,
+                        ...item,
+                        likesCount: item.likes ? Object.keys(item.likes).length : 0,
+                        hasLiked: item.likes ? !!item.likes[user.id] : false,
+                        commentsCount: item.comments ? Object.keys(item.comments).length : 0,
+                        mediaUrl: videoUrl || ''
+                    };
+                })
+                .filter(item => {
+                    return (item.type === 'video' || item.type === 'short') && item.mediaUrl;
+                })
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+            // Adicionar URLs autenticadas
+            const authedVideos = videoPosts.map(v => ({
+                ...v,
+                mediaUrl: cdnUrl(v.mediaUrl)
+            }));
+
+            if (authedVideos.length > 0) {
+                setInfiniteFeed(authedVideos);
+                setHasMoreVideos(false); // Como carregamos todos, não precisa paginar
+            } else {
+                setHasMoreVideos(false);
+            }
+        };
+
+        postsRef.on("value", loadVideos, (error) => {
+            console.error("Erro ao carregar vídeos:", error);
+            setHasMoreVideos(false);
+        });
+
+        return () => {
+            postsRef.off("value", loadVideos);
+        };
+    }, [idToken, user.id]);
+
+    // ==========================================================
+    // ATUALIZAR URL DO NAVEGADOR QUANDO O VÍDEO MUDAR
+    // ==========================================================
     React.useEffect(() => {
         if (infiniteFeed.length > 0) {
             const currentVid = infiniteFeed[activeVideoFeed]?.id;
@@ -40,6 +149,9 @@ function VideoFeed({
         }
     }, [activeVideoFeed, infiniteFeed]);
 
+    // ==========================================================
+    // OBSERVADOR DE SCROLL PARA TROCA DE VÍDEO
+    // ==========================================================
     React.useEffect(() => {
         if (videoContainerRef.current && infiniteFeed.length > 0) {
             let observer = null;
@@ -91,10 +203,6 @@ function VideoFeed({
 
                             viewStartTime.current = Date.now();
 
-                            if (idx >= infiniteFeed.length - 2 && !isLoadingMoreVideos && hasMoreVideos) {
-                                loadMoreVideos();
-                            }
-
                         } else {
                             if (video && !video.paused) {
                                 video.pause();
@@ -122,85 +230,6 @@ function VideoFeed({
             };
         }
     }, [infiniteFeed.length, activeVideoFeed]);
-
-    const loadMoreVideos = async () => {
-        if (isLoadingMoreVideos || !hasMoreVideos) return;
-        setIsLoadingMoreVideos(true);
-
-        try {
-            const db = window.firebaseDB;
-            if (!db) return;
-
-            let query = db.ref('posts').orderByKey();
-
-            if (infiniteFeed.length > 0) {
-                const lastItemKey = infiniteFeed[infiniteFeed.length - 1].id; 
-                query = query.endBefore(lastItemKey);
-            }
-
-            const snap = await query.limitToLast(20).once('value');
-
-            if (snap.exists()) {
-                const data = snap.val();
-                const keys = Object.keys(data);
-
-                if (keys.length === 0) {
-                    setHasMoreVideos(false);
-                    return;
-                }
-
-                const rawVids = keys.map(key => {
-                    const item = data[key];
-                    let videoUrl = item.videoUrl || (typeof item.mediaUrl === 'string' ? item.mediaUrl : '');
-
-                    if (!videoUrl && item.mediaUrls && Array.isArray(item.mediaUrls) && item.mediaUrls.length > 0) {
-                        const first = item.mediaUrls[0];
-                        videoUrl = typeof first === 'string' ? first : (first && first.url ? first.url : '');
-                    }
-
-                    return {
-                        id: key,
-                        ...item,
-                        likesCount: item.likes ? Object.keys(item.likes).length : 0,
-                        hasLiked: item.likes ? !!item.likes[user.id] : false,
-                        commentsCount: item.comments ? Object.keys(item.comments).length : 0,
-                        mediaUrl: videoUrl || ''
-                    };
-                }).filter(item => {
-                    return (item.type === 'video' || item.type === 'short') && item.mediaUrl;
-                });
-
-                const newVideos = rawVids.reverse().map((v, i) => ({
-                    ...v,
-                    uniqueKey: `${v.id}_${Date.now()}_${i}`
-                }));
-
-                setInfiniteFeed(prev => {
-                    const combined = [...prev, ...newVideos];
-                    const unique = [];
-                    const seen = new Set();
-                    for (const item of combined) {
-                        if (!seen.has(item.uniqueKey)) {
-                            seen.add(item.uniqueKey);
-                            unique.push(item);
-                        }
-                    }
-                    return unique;
-                });
-
-                if (keys.length < 20) {
-                    setHasMoreVideos(false);
-                }
-
-            } else {
-                setHasMoreVideos(false);
-            }
-        } catch (err) {
-            console.error("Erro ao carregar mais vídeos:", err);
-        } finally {
-            setIsLoadingMoreVideos(false);
-        }
-    };
 
     const toggleMute = (e) => {
         e.stopPropagation();
@@ -237,7 +266,7 @@ function VideoFeed({
                         {activeVideoFeed !== null && Math.abs(index - activeVideoFeed) <= 2 ? (
                             <>
                                 <video 
-                                    src={vPost.mediaUrl || (vPost.mediaUrls && (typeof vPost.mediaUrls[0] === 'object' ? vPost.mediaUrls[0].url : vPost.mediaUrls[0]))} 
+                                    src={vPost.mediaUrl} 
                                     className="w-full h-full object-contain md:object-cover mx-auto pointer-events-none transition-opacity duration-300 bg-black" 
                                     loop 
                                     playsInline 
@@ -317,7 +346,7 @@ function VideoFeed({
                                     {renderTextWithHashtags(vPost.content)}
                                 </div>
 
-                                {/* Info de Som/Música - Opcional se existir, ou estático */}
+                                {/* Info de Som/Música */}
                                 <div className="flex items-center gap-2 mt-4 text-xs font-medium text-white/80 bg-black/30 w-max px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
                                     <div className="icon-music text-sm animate-pulse"></div>
                                     <span className="marquee-text overflow-hidden whitespace-nowrap max-w-[150px]">
@@ -582,4 +611,5 @@ function VideoFeed({
         </div>
     );
 }
+
 window.VideoFeed = VideoFeed;
