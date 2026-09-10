@@ -56,14 +56,10 @@ function PostCreator({ user, onClose, onUploadComplete, initialAudioId = null })
         <div className="fixed inset-0 bg-black z-[200] flex flex-col overflow-hidden text-white" data-name="post-creator-fullscreen">
             {toast && <div className="fixed top-10 left-1/2 -translate-x-1/2 bg-gray-800 px-4 py-2 rounded-full z-[250] shadow-lg border border-gray-700">{toast}</div>}
 
-            {/* Top Bar */}
-            <div className="absolute top-0 left-0 right-0 z-[210] p-4 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent">
-                <button onClick={onClose} className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10 text-white hover:bg-white/20 transition">
-                    <div className="icon-x text-xl"></div>
-                </button>
-
+            {/* Top Bar - Apenas status de upload (sem botão X) */}
+            <div className="absolute top-0 left-0 right-0 z-[210] p-4 flex justify-end items-center bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
                 {isUploading && (
-                    <div className="bg-indigo-600 px-6 py-2 rounded-full font-bold shadow-lg flex items-center gap-2">
+                    <div className="bg-indigo-600 px-6 py-2 rounded-full font-bold shadow-lg flex items-center gap-2 pointer-events-auto">
                         <div className="icon-loader animate-spin"></div>
                         {uploadStatus}
                     </div>
