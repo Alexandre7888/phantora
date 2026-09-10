@@ -26,6 +26,7 @@ function SocialNetwork({ user, onClose }) {
     const [desktopView, setDesktopView] = React.useState('feed');
     const [showSettings, setShowSettings] = React.useState(false);
     const [idToken, setIdToken] = React.useState(null);
+    const [deletingPostId, setDeletingPostId] = React.useState(null);
 
     React.useEffect(() => {
         const interval = setInterval(() => setNow(Date.now()), 30000);
@@ -36,14 +37,12 @@ function SocialNetwork({ user, onClose }) {
         localStorage.setItem('social_theme', theme);
     }, [theme]);
 
-    // ⬇️ PEGA O TOKEN USANDO O api.js
     React.useEffect(() => {
         const fetchToken = async () => {
             try {
                 let token = null;
                 if (window.api && typeof window.api.getAuthToken === 'function') {
                     token = await window.api.getAuthToken();
-                    console.log("✅ [SocialNetwork] Token via window.api.getAuthToken()");
                 }
                 if (!token && window.firebaseAuth?.currentUser) {
                     token = await window.firebaseAuth.currentUser.getIdToken(true);
@@ -92,7 +91,90 @@ function SocialNetwork({ user, onClose }) {
     };
 
     // ==========================================================
-    // CARREGAR POSTS + FOLLOWS + STORIES
+    // EXTRAI O NOME DO ARQUIVO DE UMA URL DO CDN
+    // ==========================================================
+    const getFilenameFromUrl = (url) => {
+        if (!url || typeof url !== 'string') return null;
+        try {
+            // Remove query string
+            const cleanUrl = url.split('?')[0];
+            // Pega o último segmento após /
+            const parts = cleanUrl.split('/');
+            const filename = parts[parts.length - 1];
+            return filename || null;
+        } catch (e) {
+            return null;
+        }
+    };
+
+    // ==========================================================
+    // EXCLUIR POST (Firebase + CDN)
+    // ==========================================================
+    const handleDeletePost = async (postId) => {
+        if (!window.confirm("Deseja realmente excluir esta publicação? O arquivo também será deletado do servidor.")) {
+            return;
+        }
+
+        setDeletingPostId(postId);
+        const db = window.firebaseDB;
+        if (!db) { setDeletingPostId(null); return; }
+
+        try {
+            // 1. Busca os dados do post pra saber o que deletar
+            const postSnap = await db.ref(`posts/${postId}`).once('value');
+            const post = postSnap.val();
+
+            if (!post) {
+                showToast("Post não encontrado.");
+                setDeletingPostId(null);
+                return;
+            }
+
+            // 2. Coleta todas as URLs de mídia
+            const urlsToDelete = [];
+            const mediaUrl = extractUrl(post.mediaUrl);
+            if (mediaUrl) urlsToDelete.push(mediaUrl);
+            if (Array.isArray(post.mediaUrls)) {
+                post.mediaUrls.forEach(u => {
+                    const url = extractUrl(u);
+                    if (url) urlsToDelete.push(url);
+                });
+            }
+
+            // 3. Deleta cada arquivo do CDN
+            for (const url of urlsToDelete) {
+                const filename = getFilenameFromUrl(url);
+                if (filename) {
+                    try {
+                        console.log("🗑️ Deletando do CDN:", filename);
+                        await window.api.deleteFromCDN(filename);
+                    } catch (e) {
+                        console.warn("Erro ao deletar arquivo do CDN:", e);
+                    }
+                }
+            }
+
+            // 4. Deleta do Firebase: posts
+            await db.ref(`posts/${postId}`).remove();
+
+            // 5. Deleta dos user_posts do usuário
+            await db.ref(`users/${user.id}/user_posts/${postId}`).remove().catch(() => {});
+
+            // 6. Remove da lista local
+            setPosts(prev => prev.filter(p => p.id !== postId));
+
+            showToast("Post excluído com sucesso!");
+
+        } catch (error) {
+            console.error("Erro ao excluir post:", error);
+            showToast("Erro ao excluir: " + error.message);
+        } finally {
+            setDeletingPostId(null);
+        }
+    };
+
+    // ==========================================================
+    // CARREGAR POSTS
     // ==========================================================
     React.useEffect(() => {
         const db = window.firebaseDB;
@@ -225,9 +307,6 @@ function SocialNetwork({ user, onClose }) {
         return () => { followsRef.off('value', followsListener); };
     }, [user.id]);
 
-    // ==========================================================
-    // AÇÕES
-    // ==========================================================
     const handleLike = async (postId, hasLiked) => {
         const db = window.firebaseDB;
         if (!db) return;
@@ -645,143 +724,163 @@ function SocialNetwork({ user, onClose }) {
                                 <p>Nenhuma publicação encontrada.</p>
                             </div>
                         ) : (
-                            filteredPosts.map(post => (
-                                <div key={post.id} id={`post-${post.id}`} className={cardBg}>
-                                    <div className="p-4 flex justify-between items-start">
-                                        <div className="flex items-center gap-3">
-                                            <img 
-                                                src={post.authorAvatar || 'assets/default-avatar.svg'} 
-                                                onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
-                                                className="w-11 h-11 rounded-full object-cover border border-border cursor-pointer" 
-                                                onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}
-                                            />
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <h3 className="font-bold text-base hover:text-accent cursor-pointer" onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}>
-                                                        {post.authorName || 'Usuário'}
-                                                    </h3>
-                                                    {post.authorId !== user.id && (
-                                                        <button onClick={() => toggleFollow(post.authorId)} className={`text-xs px-2 py-0.5 rounded-md border font-semibold ${following[post.authorId] ? 'border-border text-text-secondary' : 'border-accent text-accent hover:bg-accent hover:text-white'}`}>
-                                                            {following[post.authorId] ? 'Seguindo' : 'Seguir'}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                                <div className={`text-sm ${textMuted}`}>{getRelativeTime(post.timestamp)}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {post.title && <div className="px-4 pt-2 pb-1 font-bold text-lg break-words text-primary">{post.title}</div>}
-                                    {(post.content || post.textContent) && (
-                                        <div className="px-4 pb-3 whitespace-pre-wrap text-[15px] break-words text-indigo-50 font-medium leading-relaxed">
-                                            {renderTextWithHashtags(post.content || post.textContent)}
-                                        </div>
-                                    )}
-
-                                    {(() => {
-                                        if (post.type === 'poll') {
-                                            if (window.PollViewer) {
-                                                return <window.PollViewer key={`poll-${post.id}`} post={post} user={user} />;
-                                            }
-                                            return (
-                                                <div className="p-4 border-t border-b border-border bg-tertiary/30">
-                                                    <div className="font-bold text-lg mb-3 text-primary">{post.question || 'Enquete'}</div>
-                                                    <div className="space-y-2">
-                                                        {(post.options || []).map((opt, idx) => (
-                                                            <div key={idx} className="p-3 rounded-lg bg-secondary border border-border text-text-primary">{opt.text || opt}</div>
-                                                        ))}
+                            filteredPosts.map(post => {
+                                const isOwner = post.authorId === user.id;
+                                const isDeleting = deletingPostId === post.id;
+                                return (
+                                    <div key={post.id} id={`post-${post.id}`} className={cardBg}>
+                                        <div className="p-4 flex justify-between items-start">
+                                            <div className="flex items-center gap-3">
+                                                <img 
+                                                    src={post.authorAvatar || 'assets/default-avatar.svg'} 
+                                                    onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
+                                                    className="w-11 h-11 rounded-full object-cover border border-border cursor-pointer" 
+                                                    onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}
+                                                />
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-bold text-base hover:text-accent cursor-pointer" onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}>
+                                                            {post.authorName || 'Usuário'}
+                                                        </h3>
+                                                        {post.authorId !== user.id && (
+                                                            <button onClick={() => toggleFollow(post.authorId)} className={`text-xs px-2 py-0.5 rounded-md border font-semibold ${following[post.authorId] ? 'border-border text-text-secondary' : 'border-accent text-accent hover:bg-accent hover:text-white'}`}>
+                                                                {following[post.authorId] ? 'Seguindo' : 'Seguir'}
+                                                            </button>
+                                                        )}
                                                     </div>
+                                                    <div className={`text-sm ${textMuted}`}>{getRelativeTime(post.timestamp)}</div>
                                                 </div>
-                                            );
-                                        }
-
-                                        if (post.type === 'carousel' && post.mediaUrls && post.mediaUrls.length > 0) {
-                                            return (
-                                                <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
-                                                    {post.mediaUrls.map((mUrlRaw, idx) => {
-                                                        const raw = extractUrl(mUrlRaw);
-                                                        if (!raw) return null;
-                                                        const url = cdnUrl(raw);
-                                                        if (isVideoUrl(raw)) {
-                                                            return (
-                                                                <div key={idx} className="w-full shrink-0 snap-center bg-black flex justify-center">
-                                                                    <video src={url} playsInline controls className="w-full max-h-[500px] object-contain" />
-                                                                </div>
-                                                            );
-                                                        }
-                                                        return <img key={idx} src={url} onError={(e) => { e.target.style.display = 'none'; }} className="w-full shrink-0 snap-center max-h-[500px] object-contain bg-black" loading="lazy" />;
-                                                    })}
-                                                </div>
-                                            );
-                                        }
-
-                                        const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
-                                        if (!rawUrl) return null;
-                                        const url = cdnUrl(rawUrl);
-
-                                        const ytId = getYoutubeId(rawUrl);
-                                        if (ytId) {
-                                            return (
-                                                <div className="relative w-full bg-black" style={{ aspectRatio: '16/9' }}>
-                                                    <iframe src={`https://www.youtube.com/embed/${ytId}`} frameBorder="0" allowFullScreen className="w-full h-full absolute inset-0"></iframe>
-                                                </div>
-                                            );
-                                        }
-
-                                        if (isVideoUrl(rawUrl)) {
-                                            return <InlineVideoPlayer post={post} />;
-                                        }
-
-                                        return (
-                                            <img 
-                                                src={url} 
-                                                onError={(e) => { e.target.style.display = 'none'; }} 
-                                                alt="Post" 
-                                                className="w-full max-h-[500px] object-contain bg-primary border-t border-b border-border" 
-                                                loading="lazy" 
-                                            />
-                                        );
-                                    })()}
-
-                                    <div className={`px-4 py-3 border-t flex items-center justify-between border-border ${textMuted}`}>
-                                        <div className="flex items-center gap-6">
-                                            <button onClick={() => handleLike(post.id, post.hasLiked)} className={`flex items-center gap-2 ${post.hasLiked ? 'text-danger' : 'hover:text-danger'}`}>
-                                                <div className={`icon-heart text-xl ${post.hasLiked ? 'fill-current' : ''}`}></div>
-                                                <span className="text-sm font-semibold">{post.likesCount}</span>
-                                            </button>
-                                            <button onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)} className="flex items-center gap-2 hover:text-accent">
-                                                <div className="icon-message-circle text-xl"></div>
-                                                <span className="text-sm font-semibold">{post.commentsCount}</span>
-                                            </button>
-                                        </div>
-                                        <button onClick={() => handleShare(post)} className="hover:text-accent">
-                                            <div className="icon-share-2 text-xl"></div>
-                                        </button>
-                                    </div>
-
-                                    {activeCommentPost === post.id && (
-                                        <div className="p-4 border-t bg-tertiary/30 border-border">
-                                            <div className="flex gap-2 mb-4">
-                                                <input type="text" value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder="Comentar..." className="flex-1 rounded-lg px-4 py-2 text-sm bg-primary border border-border text-primary" onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post.id)} />
-                                                <button onClick={() => handleAddComment(post.id)} disabled={!commentText.trim()} className="bg-accent text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50">Enviar</button>
                                             </div>
-                                            {post.comments && Object.keys(post.comments).map(cId => {
-                                                const c = post.comments[cId];
+
+                                            {/* ⬇️ BOTÃO DE EXCLUIR (só para o dono do post) */}
+                                            {isOwner && (
+                                                <button 
+                                                    onClick={() => handleDeletePost(post.id)}
+                                                    disabled={isDeleting}
+                                                    className={`p-2 rounded-full transition-colors ${isDeleting ? 'opacity-50 cursor-wait' : 'text-text-secondary hover:text-danger hover:bg-danger/10'}`}
+                                                    title="Excluir post"
+                                                >
+                                                    {isDeleting ? (
+                                                        <div className="icon-loader animate-spin text-sm"></div>
+                                                    ) : (
+                                                        <div className="icon-trash text-sm"></div>
+                                                    )}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {post.title && <div className="px-4 pt-2 pb-1 font-bold text-lg break-words text-primary">{post.title}</div>}
+                                        {(post.content || post.textContent) && (
+                                            <div className="px-4 pb-3 whitespace-pre-wrap text-[15px] break-words text-indigo-50 font-medium leading-relaxed">
+                                                {renderTextWithHashtags(post.content || post.textContent)}
+                                            </div>
+                                        )}
+
+                                        {(() => {
+                                            if (post.type === 'poll') {
+                                                if (window.PollViewer) {
+                                                    return <window.PollViewer key={`poll-${post.id}`} post={post} user={user} />;
+                                                }
                                                 return (
-                                                    <div key={cId} className="flex gap-3 mb-3">
-                                                        <img src={c.authorAvatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-8 h-8 rounded-full object-cover border border-border" />
-                                                        <div className="flex-1 px-4 py-3 rounded-2xl bg-secondary border border-border">
-                                                            <span className="font-bold block text-sm text-primary">{c.authorName || 'Usuário'}</span>
-                                                            <span className="text-text-primary text-sm">{c.text}</span>
-                                                            <span className="block text-[11px] mt-2 text-text-secondary">{getRelativeTime(c.timestamp)}</span>
+                                                    <div className="p-4 border-t border-b border-border bg-tertiary/30">
+                                                        <div className="font-bold text-lg mb-3 text-primary">{post.question || 'Enquete'}</div>
+                                                        <div className="space-y-2">
+                                                            {(post.options || []).map((opt, idx) => (
+                                                                <div key={idx} className="p-3 rounded-lg bg-secondary border border-border text-text-primary">{opt.text || opt}</div>
+                                                            ))}
                                                         </div>
                                                     </div>
                                                 );
-                                            })}
+                                            }
+
+                                            if (post.type === 'carousel' && post.mediaUrls && post.mediaUrls.length > 0) {
+                                                return (
+                                                    <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
+                                                        {post.mediaUrls.map((mUrlRaw, idx) => {
+                                                            const raw = extractUrl(mUrlRaw);
+                                                            if (!raw) return null;
+                                                            const url = cdnUrl(raw);
+                                                            if (isVideoUrl(raw)) {
+                                                                return (
+                                                                    <div key={idx} className="w-full shrink-0 snap-center bg-black flex justify-center">
+                                                                        <video src={url} playsInline controls className="w-full max-h-[500px] object-contain" />
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return <img key={idx} src={url} onError={(e) => { e.target.style.display = 'none'; }} className="w-full shrink-0 snap-center max-h-[500px] object-contain bg-black" loading="lazy" />;
+                                                        })}
+                                                    </div>
+                                                );
+                                            }
+
+                                            const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
+                                            if (!rawUrl) return null;
+                                            const url = cdnUrl(rawUrl);
+
+                                            const ytId = getYoutubeId(rawUrl);
+                                            if (ytId) {
+                                                return (
+                                                    <div className="relative w-full bg-black" style={{ aspectRatio: '16/9' }}>
+                                                        <iframe src={`https://www.youtube.com/embed/${ytId}`} frameBorder="0" allowFullScreen className="w-full h-full absolute inset-0"></iframe>
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (isVideoUrl(rawUrl)) {
+                                                return <InlineVideoPlayer post={post} />;
+                                            }
+
+                                            return (
+                                                <img 
+                                                    src={url} 
+                                                    onError={(e) => { e.target.style.display = 'none'; }} 
+                                                    alt="Post" 
+                                                    className="w-full max-h-[500px] object-contain bg-primary border-t border-b border-border" 
+                                                    loading="lazy" 
+                                                />
+                                            );
+                                        })()}
+
+                                        <div className={`px-4 py-3 border-t flex items-center justify-between border-border ${textMuted}`}>
+                                            <div className="flex items-center gap-6">
+                                                <button onClick={() => handleLike(post.id, post.hasLiked)} className={`flex items-center gap-2 ${post.hasLiked ? 'text-danger' : 'hover:text-danger'}`}>
+                                                    <div className={`icon-heart text-xl ${post.hasLiked ? 'fill-current' : ''}`}></div>
+                                                    <span className="text-sm font-semibold">{post.likesCount}</span>
+                                                </button>
+                                                <button onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)} className="flex items-center gap-2 hover:text-accent">
+                                                    <div className="icon-message-circle text-xl"></div>
+                                                    <span className="text-sm font-semibold">{post.commentsCount}</span>
+                                                </button>
+                                            </div>
+                                            <button onClick={() => handleShare(post)} className="hover:text-accent">
+                                                <div className="icon-share-2 text-xl"></div>
+                                            </button>
                                         </div>
-                                    )}
-                                </div>
-                            ))
+
+                                        {activeCommentPost === post.id && (
+                                            <div className="p-4 border-t bg-tertiary/30 border-border">
+                                                <div className="flex gap-2 mb-4">
+                                                    <input type="text" value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder="Comentar..." className="flex-1 rounded-lg px-4 py-2 text-sm bg-primary border border-border text-primary" onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post.id)} />
+                                                    <button onClick={() => handleAddComment(post.id)} disabled={!commentText.trim()} className="bg-accent text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50">Enviar</button>
+                                                </div>
+                                                {post.comments && Object.keys(post.comments).map(cId => {
+                                                    const c = post.comments[cId];
+                                                    return (
+                                                        <div key={cId} className="flex gap-3 mb-3">
+                                                            <img src={c.authorAvatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-8 h-8 rounded-full object-cover border border-border" />
+                                                            <div className="flex-1 px-4 py-3 rounded-2xl bg-secondary border border-border">
+                                                                <span className="font-bold block text-sm text-primary">{c.authorName || 'Usuário'}</span>
+                                                                <span className="text-text-primary text-sm">{c.text}</span>
+                                                                <span className="block text-[11px] mt-2 text-text-secondary">{getRelativeTime(c.timestamp)}</span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
                         )}
 
                         {isLoadingMore && (
