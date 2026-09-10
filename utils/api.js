@@ -16,6 +16,25 @@ window.addEventListener('unhandledrejection', function(event) {
   }
 });
 
+// ==========================================================
+// HELPER: OBTER TOKEN DO FIREBASE AUTH
+// ==========================================================
+async function getFirebaseToken() {
+  try {
+    if (window.firebaseAuth && window.firebaseAuth.currentUser) {
+      return await window.firebaseAuth.currentUser.getIdToken(true);
+    }
+    // Fallback: tentar pelo firebase compat
+    if (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) {
+      return await firebase.auth().currentUser.getIdToken(true);
+    }
+    return null;
+  } catch (e) {
+    console.warn('Não foi possível obter token do Firebase:', e);
+    return null;
+  }
+}
+
 const api = {
   // CodeHUB API
   getCodeHubUser: async (userkey) => {
@@ -71,8 +90,6 @@ const api = {
 
   saveFirebaseUser: async (publicId, data) => {
     try {
-      // Usando PUT para Firebase REST API, pois ele exclui os dados antigos no nó e salva os novos,
-      // correspondendo ao comportamento de "excluir tudo do usuário de antes e colocar um novo".
       const response = await fetch(`https://html-785e3-default-rtdb.firebaseio.com/users/${publicId}.json`, {
         method: 'PUT',
         headers: {
@@ -251,10 +268,8 @@ const api = {
         const titulo = encodeURIComponent(title);
         const mensagem = encodeURIComponent(message);
         
-        // Usando o endpoint do Google Script conforme a documentação fornecida
         const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${pushId}&titulo=${titulo}&mensagem=${mensagem}`;
 
-        // Tentando diretamente com no-cors para evitar problemas com o proxy
         try {
             await fetch(scriptUrl, { mode: 'no-cors' });
             console.log("Notificação enviada (no-cors)");
@@ -287,25 +302,44 @@ const api = {
     }
   },
 
+  // ==========================================================
+  // UPLOAD PARA CDN (COM AUTENTICAÇÃO)
+  // ==========================================================
   uploadToCDN: async (file, uid, folderType) => {
+    // 1. Obtém o token do Firebase Auth
+    const token = await getFirebaseToken();
+    
+    if (!token) {
+      throw new Error("Usuário não autenticado. Faça login para enviar arquivos.");
+    }
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('folder', `${uid}/${folderType}`);
+
+    // 2. Monta a URL com o token (?auth=ID_TOKEN) igual ao g.html
+    const baseUrl = "https://cdn-phantora-api.puter.work/upload";
+    const uploadUrl = `${baseUrl}?auth=${encodeURIComponent(token)}`;
     
     try {
       let res;
       try {
-        res = await fetch("https://cdn-phantora-api.puter.work/upload", {
+        // Tentativa direta
+        res = await fetch(uploadUrl, {
           method: "POST",
           body: formData
         });
         if (!res.ok) throw new Error("Status " + res.status);
       } catch (directErr) {
         console.warn("Upload direto falhou (provavelmente CORS), tentando proxy...", directErr);
-        res = await fetch("https://proxy-api.trickle-app.host/?url=" + encodeURIComponent("https://cdn-phantora-api.puter.work/upload"), {
-          method: "POST",
-          body: formData
-        });
+        // Fallback via proxy
+        res = await fetch(
+          "https://proxy-api.trickle-app.host/?url=" + encodeURIComponent(uploadUrl),
+          {
+            method: "POST",
+            body: formData
+          }
+        );
       }
       
       const text = await res.text();
@@ -328,13 +362,28 @@ const api = {
     }
   },
 
+  // ==========================================================
+  // DELETE DO CDN (COM AUTENTICAÇÃO)
+  // ==========================================================
   deleteFromCDN: async (filename) => {
     const key = "phantora-secret-key-123";
+    const token = await getFirebaseToken();
+    
     try {
-      const res = await fetch("https://cdn-phantora-api.puter.work/manage", {
+      const baseUrl = "https://cdn-phantora-api.puter.work/manage";
+      const url = token 
+        ? `${baseUrl}?auth=${encodeURIComponent(token)}` 
+        : baseUrl;
+      
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, action: "delete", filename })
+        body: JSON.stringify({ 
+          key, 
+          action: "delete", 
+          filename,
+          auth: token 
+        })
       });
       const data = await res.json();
       return data.success;
@@ -344,4 +393,5 @@ const api = {
     }
   }
 };
+
 window.api = api;
