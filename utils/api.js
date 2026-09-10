@@ -75,13 +75,7 @@ const api = {
   // CodeHUB API
   getCodeHubUser: async (userkey) => {
     try {
-      let response;
-      try {
-        response = await fetch(`https://code-hub-eta.vercel.app/api/userkey.js?userkey=${encodeURIComponent(userkey)}`);
-      } catch (e) {
-        console.warn('Direct fetch failed, trying proxy...', e);
-        response = await fetch(`https://proxy-api.trickle-app.host/?url=${encodeURIComponent(`https://code-hub-eta.vercel.app/api/userkey.js?userkey=${userkey}`)}`);
-      }
+      const response = await fetch(`https://code-hub-eta.vercel.app/api/userkey.js?userkey=${encodeURIComponent(userkey)}`);
       return await response.json();
     } catch (error) {
       console.error('CodeHUB API Error:', error);
@@ -224,9 +218,9 @@ const api = {
         const buttons = encodeURIComponent(`Atender;${callUrl}`);
         const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${idsStr}&titulo=${titulo}&mensagem=${mensagem}&url=${urlEnc}&buttons=${buttons}`;
         try {
-            await fetch(`https://proxy-api.trickle-app.host/?url=${encodeURIComponent(scriptUrl)}`);
+            await fetch(scriptUrl, { mode: 'no-cors' });
         } catch (e) {
-            try { await fetch(scriptUrl, { mode: 'no-cors' }); } catch (fallbackError) {}
+            console.warn('Notification error:', e);
         }
     }
   },
@@ -248,10 +242,10 @@ const api = {
         const buttons = encodeURIComponent(`Atender;${callUrl}`);
         const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${idsStr}&titulo=${titulo}&mensagem=${mensagem}&url=${urlEnc}&buttons=${buttons}`;
         try {
-            const response = await fetch(`https://proxy-api.trickle-app.host/?url=${encodeURIComponent(scriptUrl)}`);
-            return response.ok;
-        } catch (e) {
-            try { await fetch(scriptUrl, { mode: 'no-cors' }); return true; } catch (err) { return false; }
+            await fetch(scriptUrl, { mode: 'no-cors' });
+            return true;
+        } catch (err) {
+            return false;
         }
       }
       return false;
@@ -297,74 +291,103 @@ const api = {
   },
 
   // ==========================================================
-  // UPLOAD PARA CDN — COM ESPERA DE SESSÃO + TOKEN FRESCO
+  // UPLOAD PARA CDN — ENVIA TÍTULO + METADADOS (OBRIGATÓRIOS)
   // ==========================================================
-  uploadToCDN: async (file, uid, folderType) => {
+  uploadToCDN: async (file, uid, folderType, metadata = {}) => {
     console.log("🚀 [uploadToCDN] Iniciando...");
     console.log("   file:", file?.name, file?.size, "bytes");
+    console.log("   uid:", uid);
+    console.log("   folderType:", folderType);
+    console.log("   metadata:", metadata);
 
-    // ⬇️ ESPERA A SESSÃO DO FIREBASE RESTAURAR + GERA TOKEN FRESCO
+    // 1. Gera token fresco agora
     const token = await getFirebaseToken();
 
     if (!token) {
-      throw new Error("Usuário não autenticado. Faça login para enviar arquivos.");
+        throw new Error("Usuário não autenticado. Faça login para enviar arquivos.");
     }
 
+    console.log("   ✅ Token gerado");
+
+    // 2. Detecta o tipo automaticamente
+    let detectedType = metadata.type;
+    if (!detectedType) {
+        if (file.type.startsWith('video/')) detectedType = 'video';
+        else if (file.type.startsWith('image/')) detectedType = 'image';
+        else detectedType = 'text';
+    }
+
+    // 3. Monta FormData COM todos os campos obrigatórios
     const formData = new FormData();
     formData.append('file', file);
     formData.append('folder', `${uid}/${folderType}`);
+    formData.append('title', metadata.title || 'Sem título');     // ⬅️ OBRIGATÓRIO
+    formData.append('description', metadata.description || '');
+    formData.append('type', detectedType);
+    formData.append('textContent', metadata.textContent || '');
 
-    const baseUrl = "https://cdn-phantora-api.puter.work/upload";
-    const uploadUrl = `${baseUrl}?auth=${encodeURIComponent(token)}`;
+    console.log("   📦 FormData montado:");
+    console.log("      - title:", metadata.title || 'Sem título');
+    console.log("      - type:", detectedType);
+    console.log("      - folder:", `${uid}/${folderType}`);
 
+    // 4. Monta URL com token
+    const uploadUrl = `https://cdn-phantora-api.puter.work/upload?auth=${encodeURIComponent(token)}`;
+    console.log("   📤 Enviando para CDN...");
+
+    // 5. Faz o upload DIRETO
+    const res = await fetch(uploadUrl, {
+        method: "POST",
+        body: formData
+    });
+
+    console.log("   📥 Status:", res.status);
+
+    if (!res.ok) {
+        const errText = await res.text();
+        console.error("   ❌ Erro HTTP:", res.status, errText.substring(0, 300));
+        throw new Error(`Servidor retornou status ${res.status}: ${errText.substring(0, 100)}`);
+    }
+
+    // 6. Processa resposta
+    const text = await res.text();
+    let data;
     try {
-      let res;
-      try {
-        res = await fetch(uploadUrl, { method: "POST", body: formData });
-        console.log("   📥 Status direto:", res.status);
-        if (!res.ok) throw new Error("Status " + res.status);
-      } catch (directErr) {
-        console.warn("   ⚠️ Direto falhou, tentando proxy...");
-        const proxiedUrl = "https://proxy-api.trickle-app.host/?url=" + encodeURIComponent(uploadUrl);
-        res = await fetch(proxiedUrl, { method: "POST", body: formData });
-        console.log("   📥 Status proxy:", res.status);
-        if (!res.ok) throw new Error("Proxy status " + res.status);
-      }
+        data = JSON.parse(text);
+    } catch (e) {
+        console.error("   ❌ Resposta não é JSON:", text.substring(0, 200));
+        throw new Error("Servidor da CDN retornou resposta inválida.");
+    }
 
-      const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); }
-      catch (e) { throw new Error("Resposta não é JSON"); }
-
-      if (data.success) {
-        const url = data.file?.url || data.url || data.file_url || (typeof data.file === 'string' ? data.file : '');
-        console.log("   ✅ Upload OK:", url);
-        return url;
-      } else {
-        throw new Error(data.error || 'Erro no upload');
-      }
-    } catch (err) {
-      console.error("   ❌ Upload falhou:", err);
-      throw err;
+    if (data.success) {
+        console.log("   ✅ Upload OK! Resposta completa:", data);
+        return data;  // ⬅️ Retorna TUDO (success, url, postId, etc.)
+    } else {
+        console.error("   ❌ success: false", data);
+        throw new Error(data.error || 'Erro no upload para CDN');
     }
   },
 
+  // ==========================================================
+  // DELETE DO CDN — SEM PROXY
+  // ==========================================================
   deleteFromCDN: async (filename) => {
     const key = "phantora-secret-key-123";
     const token = await getFirebaseToken();
     try {
-      const baseUrl = "https://cdn-phantora-api.puter.work/manage";
-      const url = token ? `${baseUrl}?auth=${encodeURIComponent(token)}` : baseUrl;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, action: "delete", filename, auth: token })
-      });
-      const data = await res.json();
-      return data.success;
+        const url = token 
+            ? `https://cdn-phantora-api.puter.work/manage?auth=${encodeURIComponent(token)}`
+            : `https://cdn-phantora-api.puter.work/manage`;
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key, action: "delete", filename, auth: token })
+        });
+        const data = await res.json();
+        return data.success;
     } catch (err) {
-      console.error("Delete CDN Error:", err);
-      return false;
+        console.error("Delete CDN Error:", err);
+        return false;
     }
   }
 };
