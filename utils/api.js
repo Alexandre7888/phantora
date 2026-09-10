@@ -17,20 +17,48 @@ window.addEventListener('unhandledrejection', function(event) {
 });
 
 // ==========================================================
-// HELPER: OBTER TOKEN DO FIREBASE AUTH
+// HELPER: OBTER TOKEN FRESCO DO FIREBASE AUTH (NA HORA)
 // ==========================================================
 async function getFirebaseToken() {
   try {
-    if (window.firebaseAuth && window.firebaseAuth.currentUser) {
-      return await window.firebaseAuth.currentUser.getIdToken(true);
+    // Tentativa 1: window.firebaseAuth (compat)
+    if (window.firebaseAuth) {
+      const user = window.firebaseAuth.currentUser;
+      if (user) {
+        // ⬇️ getIdToken(true) FORÇA REFRESH DO TOKEN
+        const token = await user.getIdToken(true);
+        console.log("✅ [getFirebaseToken] Token gerado agora:", token.substring(0, 30) + "...");
+        return token;
+      } else {
+        console.warn("⚠️ [getFirebaseToken] window.firebaseAuth existe mas currentUser é null");
+      }
+    } else {
+      console.warn("⚠️ [getFirebaseToken] window.firebaseAuth não definido");
     }
-    // Fallback: tentar pelo firebase compat
-    if (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) {
-      return await firebase.auth().currentUser.getIdToken(true);
+
+    // Tentativa 2: firebase.auth() (compat global)
+    if (typeof firebase !== 'undefined' && firebase.auth) {
+      const user = firebase.auth().currentUser;
+      if (user) {
+        const token = await user.getIdToken(true);
+        console.log("✅ [getFirebaseToken] Token gerado via firebase.auth():", token.substring(0, 30) + "...");
+        return token;
+      } else {
+        console.warn("⚠️ [getFirebaseToken] firebase.auth() existe mas currentUser é null");
+      }
     }
+
+    // Tentativa 3: firebaseAuth modular (se existir)
+    if (typeof window.auth !== 'undefined' && window.auth?.currentUser) {
+      const token = await window.auth.currentUser.getIdToken(true);
+      console.log("✅ [getFirebaseToken] Token gerado via window.auth");
+      return token;
+    }
+
+    console.error("❌ [getFirebaseToken] Nenhum usuário autenticado encontrado!");
     return null;
   } catch (e) {
-    console.warn('Não foi possível obter token do Firebase:', e);
+    console.error("❌ [getFirebaseToken] Erro ao gerar token:", e);
     return null;
   }
 }
@@ -303,67 +331,99 @@ const api = {
   },
 
   // ==========================================================
-  // UPLOAD PARA CDN (COM AUTENTICAÇÃO)
+  // UPLOAD PARA CDN — GERANDO TOKEN FRESCO NA HORA DO ENVIO
   // ==========================================================
   uploadToCDN: async (file, uid, folderType) => {
-    // 1. Obtém o token do Firebase Auth
+    console.log("🚀 [uploadToCDN] Iniciando upload...");
+    console.log("   file:", file?.name, file?.size, "bytes");
+    console.log("   uid:", uid, "| folder:", folderType);
+
+    // ============ 1. GERA TOKEN FRESCO AGORA ============
     const token = await getFirebaseToken();
-    
+
     if (!token) {
+      console.error("❌ [uploadToCDN] Sem token, abortando upload");
       throw new Error("Usuário não autenticado. Faça login para enviar arquivos.");
     }
 
+    console.log("   ✅ Token fresco gerado:", token.substring(0, 40) + "...");
+
+    // ============ 2. MONTA FORMDATA ============
     const formData = new FormData();
     formData.append('file', file);
     formData.append('folder', `${uid}/${folderType}`);
 
-    // 2. Monta a URL com o token (?auth=ID_TOKEN) igual ao g.html
+    // ============ 3. MONTA URL COM TOKEN (igual g.html) ============
     const baseUrl = "https://cdn-phantora-api.puter.work/upload";
     const uploadUrl = `${baseUrl}?auth=${encodeURIComponent(token)}`;
-    
+    console.log("   📤 URL montada");
+
     try {
       let res;
+      
+      // ============ 4. TENTA DIRETO ============
       try {
-        // Tentativa direta
         res = await fetch(uploadUrl, {
           method: "POST",
           body: formData
         });
-        if (!res.ok) throw new Error("Status " + res.status);
+        
+        console.log("   📥 Status direto:", res.status);
+        
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error("   ❌ Erro direto:", res.status, errText.substring(0, 200));
+          throw new Error(`Status ${res.status}`);
+        }
       } catch (directErr) {
-        console.warn("Upload direto falhou (provavelmente CORS), tentando proxy...", directErr);
-        // Fallback via proxy
-        res = await fetch(
-          "https://proxy-api.trickle-app.host/?url=" + encodeURIComponent(uploadUrl),
-          {
-            method: "POST",
-            body: formData
-          }
-        );
+        console.warn("   ⚠️ Upload direto falhou (CORS ou status):", directErr.message);
+        
+        // ============ 5. FALLBACK VIA PROXY ============
+        console.log("   🔄 Tentando via proxy...");
+        const proxiedUrl = "https://proxy-api.trickle-app.host/?url=" + encodeURIComponent(uploadUrl);
+        
+        res = await fetch(proxiedUrl, {
+          method: "POST",
+          body: formData
+        });
+        
+        console.log("   📥 Status proxy:", res.status);
+        
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error("   ❌ Erro proxy:", res.status, errText.substring(0, 200));
+          throw new Error(`Proxy status ${res.status}`);
+        }
       }
-      
+
+      // ============ 6. PARSEIA RESPOSTA ============
       const text = await res.text();
+      console.log("   📄 Resposta:", text.substring(0, 200));
+
       let data;
       try {
         data = JSON.parse(text);
       } catch (parseError) {
-        console.error("CDN Response não é JSON. Status:", res?.status, "Texto:", text.substring(0, 200));
-        throw new Error("O servidor da CDN está indisponível ou retornou um erro (Não JSON).");
+        console.error("   ❌ Resposta não é JSON");
+        throw new Error("Servidor da CDN retornou resposta inválida.");
       }
 
       if (data.success) {
-        return data.file?.url || data.url || data.file_url || (typeof data.file === 'string' ? data.file : '');
+        const fileUrl = data.file?.url || data.url || data.file_url || (typeof data.file === 'string' ? data.file : '');
+        console.log("   ✅ Upload OK! URL:", fileUrl);
+        return fileUrl;
       } else {
+        console.error("   ❌ success: false", data);
         throw new Error(data.error || 'Erro no upload para CDN');
       }
     } catch (err) {
-      console.error("Upload CDN Error:", err);
+      console.error("   ❌❌❌ FALHA FINAL:", err);
       throw err;
     }
   },
 
   // ==========================================================
-  // DELETE DO CDN (COM AUTENTICAÇÃO)
+  // DELETE DO CDN — TAMBÉM GERA TOKEN FRESCO
   // ==========================================================
   deleteFromCDN: async (filename) => {
     const key = "phantora-secret-key-123";
