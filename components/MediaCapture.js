@@ -41,8 +41,7 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
     const [torchOn, setTorchOn] = React.useState(false);
     const [captureMode, setCaptureMode] = React.useState('photo');
     const [showSettings, setShowSettings] = React.useState(false);
-    
-    // Audio Context refs for mixing
+
     const audioContextRef = React.useRef(null);
     const micGainRef = React.useRef(null);
     const musicGainRef = React.useRef(null);
@@ -58,7 +57,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
         { id: 'hat_crown', name: 'Coroa', type: 'head', url: 'https://cdn-icons-png.flaticon.com/512/1004/1004733.png' }
     ]);
 
-    // IndexedDB setup for Gallery
     React.useEffect(() => {
         const initDB = () => {
             const request = indexedDB.open('PhantoraGallery', 1);
@@ -117,7 +115,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
         }
     };
 
-    // Filtrar áudios baseado na pesquisa
     React.useEffect(() => {
         if (searchQuery.trim() === '') {
             setFilteredAudios(audios);
@@ -131,7 +128,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
         }
     }, [searchQuery, audios]);
 
-    // Focar no campo de pesquisa quando o menu abrir
     React.useEffect(() => {
         if (showAudioMenu && searchInputRef.current) {
             setTimeout(() => {
@@ -613,13 +609,12 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
 
     return (
         <div className={`${embedded ? 'absolute' : 'fixed'} inset-0 bg-black z-[100] flex flex-col select-none`} data-name="camera-capture" data-file="components/CameraCapture.js">
-            {/* Top Bar - Glass morphism */}
+            {/* Top Bar - SEM botão X */}
             <div className={`absolute top-0 left-0 right-0 z-20 ${previewMedia ? 'hidden' : ''}`}>
                 <div className="mx-3 mt-4">
-                    <div className="backdrop-blur-xl bg-black/30 rounded-full border border-white/10 pl-2 pr-3 py-2 flex items-center justify-between shadow-2xl">
-                        <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center transition-all duration-200 backdrop-blur-sm">
-                            <div className="icon-x text-white text-lg"></div>
-                        </button>
+                    <div className="backdrop-blur-xl bg-black/30 rounded-full border border-white/10 px-3 py-2 flex items-center justify-between shadow-2xl">
+                        {/* Espaço vazio no lugar do botão X */}
+                        <div className="w-10 h-10"></div>
 
                         <button
                             onClick={() => setShowAudioMenu(true)}
@@ -702,7 +697,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                     <canvas ref={canvasRef} className="hidden" />
                 </div>
 
-                {/* Grid Overlay */}
                 {gridVisible && (
                     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between z-10">
                         <div className="w-full h-1/3 border-b border-white/20"></div>
@@ -714,12 +708,10 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                     </div>
                 )}
 
-                {/* Flash Animation */}
                 {showFlash && (
                     <div className="absolute inset-0 bg-white z-30 animate-flash-out"></div>
                 )}
                 
-                {/* Recording Timer */}
                 {!photoOnly && isRecording && (
                     <div className="absolute top-24 left-1/2 -translate-x-1/2 z-20">
                         <div className="backdrop-blur-xl bg-red-500/20 px-5 py-2 rounded-full border border-red-500/30 flex items-center gap-3 shadow-2xl">
@@ -734,7 +726,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                     </div>
                 )}
 
-                {/* Volume Controls */}
                 {selectedAudio && !previewMedia && (
                     <button 
                         onClick={() => setShowVolumeControls(!showVolumeControls)}
@@ -781,7 +772,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                     </div>
                 )}
 
-                {/* Zoom Slider */}
                 {capabilities?.zoom && (
                     <div className="absolute left-4 top-1/2 -translate-y-1/2 h-48 z-20">
                         <div className="backdrop-blur-xl bg-black/30 rounded-full py-4 px-2 border border-white/10">
@@ -800,10 +790,9 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                 )}
             </div>
 
-            {/* Audio Menu - Modal with Search */}
+            {/* Audio Menu */}
             {showAudioMenu && (
                 <div className="absolute inset-0 bg-black/95 backdrop-blur-xl z-50 flex flex-col text-white">
-                    {/* Header */}
                     <div className="p-4 border-b border-white/10">
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="font-bold text-xl bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Músicas Disponíveis</h2>
@@ -818,7 +807,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                             </button>
                         </div>
                         
-                        {/* Search Bar */}
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                 <div className="icon-search text-white/40 text-lg"></div>
@@ -842,9 +830,7 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                         </div>
                     </div>
 
-                    {/* Content */}
                     <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        {/* Option "Nenhum som" */}
                         <div 
                             className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all duration-300 ${
                                 !selectedAudio 
@@ -871,14 +857,12 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                             )}
                         </div>
 
-                        {/* Loading State */}
                         {isLoadingAudios ? (
                             <div className="flex flex-col items-center justify-center py-12 text-white/40">
                                 <div className="w-12 h-12 rounded-full border-2 border-t-purple-400 border-purple-400/20 animate-spin mb-4"></div>
                                 <p className="text-sm">Carregando músicas...</p>
                             </div>
                         ) : filteredAudios.length === 0 ? (
-                            /* Empty State */
                             <div className="text-center py-12">
                                 <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4 border border-white/10">
                                     <div className="icon-music text-3xl text-white/20"></div>
@@ -893,7 +877,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                                 )}
                             </div>
                         ) : (
-                            /* Results count */
                             <>
                                 {searchQuery && (
                                     <div className="px-1 py-1">
@@ -903,7 +886,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                                     </div>
                                 )}
                                 
-                                {/* Audio List */}
                                 {filteredAudios.map(audio => (
                                     <div 
                                         key={audio.id} 
@@ -937,11 +919,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                                                 <div className="icon-check text-xs text-white"></div>
                                             </div>
                                         )}
-                                        {selectedAudio?.id !== audio.id && (
-                                            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <div className="icon-play text-sm text-white/60"></div>
-                                            </div>
-                                        )}
                                     </div>
                                 ))}
                             </>
@@ -954,7 +931,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                 <audio ref={audioPlayerRef} src={selectedAudio.mediaUrl} preload="auto" loop crossOrigin="anonymous" />
             )}
 
-            {/* AR Filter Carousel */}
             {showFilterMenu && !previewMedia && !showGallery && (
                 <div className="absolute bottom-[184px] left-0 right-0 z-20 px-4">
                     <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar snap-x" style={{ scrollbarWidth: 'none' }}>
@@ -986,7 +962,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
 
             {/* Bottom Controls */}
             <div className={`pb-10 bg-gradient-to-t from-black via-black/95 to-transparent pt-16 z-20 ${previewMedia || showGallery ? 'hidden' : ''} absolute bottom-0 left-0 right-0`}>
-                {/* Mode Switcher */}
                 {!photoOnly && !isRecording && (
                     <div className="flex justify-center mb-6">
                         <div className="flex items-center gap-1 bg-black/40 backdrop-blur-md rounded-full p-1 border border-white/10">
@@ -1011,7 +986,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                 )}
 
                 <div className="flex items-center justify-between px-10 max-w-md mx-auto">
-                    {/* Gallery Button */}
                     <button
                         onClick={() => setShowGallery(true)}
                         className="relative w-12 h-12 rounded-2xl active:scale-90 transition-all duration-200"
@@ -1026,7 +1000,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                         </div>
                     </button>
 
-                    {/* Capture Button */}
                     <div
                         className="relative cursor-pointer group select-none"
                         onMouseDown={handleButtonPress}
@@ -1035,7 +1008,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                         onTouchStart={handleButtonPress}
                         onTouchEnd={handleButtonRelease}
                     >
-                        {/* Outer glow */}
                         <div className={`absolute inset-0 rounded-full blur-xl transition-all duration-300 ${
                             isRecording
                                 ? 'bg-red-500/40 scale-125'
@@ -1044,7 +1016,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                                     : 'bg-white/25 scale-100 group-hover:scale-110'
                         }`}></div>
 
-                        {/* Outer Ring */}
                         <div className={`relative w-[86px] h-[86px] rounded-full flex items-center justify-center transition-all duration-300 ${
                             isRecording
                                 ? 'border-[4px] border-red-500 scale-110'
@@ -1052,7 +1023,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                                     ? 'border-[4px] border-red-400/80 group-hover:scale-105'
                                     : 'border-[4px] border-white group-hover:scale-105'
                         }`}>
-                            {/* Inner Button */}
                             <div className={`transition-all duration-300 shadow-2xl ${
                                 isRecording
                                     ? 'w-8 h-8 bg-red-500 rounded-lg'
@@ -1062,7 +1032,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                             }`}></div>
                         </div>
 
-                        {/* Recording Progress Ring */}
                         {!photoOnly && isRecording && (
                             <svg className="absolute inset-0 w-[86px] h-[86px] -rotate-90 pointer-events-none">
                                 <circle
@@ -1087,7 +1056,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                         )}
                     </div>
 
-                    {/* Flip Camera */}
                     <button
                         onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
                         className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 backdrop-blur-md flex items-center justify-center border border-white/15 transition-all duration-200"
@@ -1109,7 +1077,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                     </div>
                     <div className="flex-1 overflow-y-auto p-2">
                         <div className="grid grid-cols-4 gap-2">
-                            {/* Add Media Button */}
                             <label className="aspect-square bg-blue-600 rounded-lg flex flex-col items-center justify-center hover:bg-blue-500 transition-colors border border-blue-400/50 shadow-lg shadow-blue-500/20 cursor-pointer">
                                 <div className="icon-plus text-white text-3xl mb-1"></div>
                                 <input 
@@ -1121,7 +1088,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
                                 />
                             </label>
 
-                            {/* Media Items */}
                             {galleryMedia.map((media) => (
                                 <div 
                                     key={media.id} 
@@ -1192,4 +1158,4 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
     );
 }
 
-window.CameraCapture = CameraCapture;
+window.CameraCapture = MediaCapture;
