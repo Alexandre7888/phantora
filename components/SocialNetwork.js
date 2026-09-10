@@ -23,7 +23,6 @@ function SocialNetwork({ user, onClose }) {
     const [isQuickSharing, setIsQuickSharing] = React.useState(false);
     const [quickShareSuccess, setQuickShareSuccess] = React.useState(false);
     const [showDiscovery, setShowDiscovery] = React.useState(false);
-    const [activeHashtag, setActiveHashtag] = React.useState(null);
     const [filterType, setFilterType] = React.useState('all');
     const [theme, setTheme] = React.useState(localStorage.getItem('social_theme') || 'light');
     const [toast, setToast] = React.useState(null);
@@ -37,7 +36,7 @@ function SocialNetwork({ user, onClose }) {
     const [desktopView, setDesktopView] = React.useState('feed');
     const [selectedUser, setSelectedUser] = React.useState(null);
     const [showSettings, setShowSettings] = React.useState(false);
-    const [friendSuggestions, setFriendSuggestions] = React.useState([]);
+    const [idToken, setIdToken] = React.useState(null);
 
     React.useEffect(() => {
         const interval = setInterval(() => setNow(Date.now()), 30000);
@@ -48,9 +47,45 @@ function SocialNetwork({ user, onClose }) {
         localStorage.setItem('social_theme', theme);
     }, [theme]);
 
+    // ⬇️ PEGA O TOKEN DO FIREBASE (igual api.js faz)
+    React.useEffect(() => {
+        const fetchToken = async () => {
+            try {
+                if (window.firebaseAuth?.currentUser) {
+                    const token = await window.firebaseAuth.currentUser.getIdToken(true);
+                    setIdToken(token);
+                    console.log("✅ [SocialNetwork] Token obtido");
+                } else if (typeof firebase !== 'undefined' && firebase.auth().currentUser) {
+                    const token = await firebase.auth().currentUser.getIdToken(true);
+                    setIdToken(token);
+                    console.log("✅ [SocialNetwork] Token via firebase.auth()");
+                }
+            } catch (e) {
+                console.warn("Erro ao obter token:", e);
+            }
+        };
+        fetchToken();
+    }, []);
+
     const showToast = (msg) => {
         setToast(msg);
         setTimeout(() => setToast(null), 3000);
+    };
+
+    // ==========================================================
+    // HELPER: adiciona ?auth=TOKEN à URL do CDN
+    // ==========================================================
+    const cdnUrl = (url) => {
+        if (!url || typeof url !== 'string') return '';
+        // Só adiciona token se for URL do CDN da Phantora
+        if (url.includes('cdn-phantora') || url.includes('puter.work')) {
+            if (!idToken) return url;
+            // Se já tem ?auth=, não adiciona de novo
+            if (url.includes('auth=')) return url;
+            const sep = url.includes('?') ? '&' : '?';
+            return `${url}${sep}auth=${encodeURIComponent(idToken)}`;
+        }
+        return url;
     };
 
     // ==========================================================
@@ -61,6 +96,29 @@ function SocialNetwork({ user, onClose }) {
         if (typeof item === 'string') return item;
         if (typeof item === 'object') return item.url || item.src || item.file || '';
         return '';
+    };
+
+    // ==========================================================
+    // HELPER: detecta se é VÍDEO baseado na URL (não no type)
+    // ==========================================================
+    const isVideoUrl = (url) => {
+        if (!url || typeof url !== 'string') return false;
+        const lower = url.toLowerCase();
+        // Extensões de vídeo
+        if (lower.match(/\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?|$)/i)) return true;
+        // Padrões do CDN (arquivos de vídeo têm -mp4)
+        if (lower.includes('-mp4')) return true;
+        if (lower.includes('.mp4')) return true;
+        if (lower.includes('/video')) return true;
+        // Imagens NUNCA são vídeo
+        if (lower.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i)) return false;
+        return false;
+    };
+
+    const isImageUrl = (url) => {
+        if (!url || typeof url !== 'string') return false;
+        const lower = url.toLowerCase();
+        return lower.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i) !== null;
     };
 
     React.useEffect(() => {
@@ -84,7 +142,7 @@ function SocialNetwork({ user, onClose }) {
                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
                         const data = await res.json();
                         if (data && data.address) {
-                            const city = data.address.city || data.address.town || data.address.village || data.address.municipality || "Desconhecida";
+                            const city = data.address.city || data.address.town || data.address.village || "Desconhecida";
                             const state = data.address.state || "Desconhecido";
                             if (city !== "Desconhecida" && state !== "Desconhecido") {
                                 await db.ref(`users/${user.id}`).update({ city, state });
@@ -153,7 +211,6 @@ function SocialNetwork({ user, onClose }) {
                     id: key, ...p,
                     authorName: uData.name,
                     authorAvatar: uData.avatar,
-                    authorUsername: uData.username,
                     isVerified: uData.isVerified,
                     comments: processedComments,
                     likesCount: p.likes ? Object.keys(p.likes).length : 0,
@@ -204,28 +261,6 @@ function SocialNetwork({ user, onClose }) {
         };
         calculateFollowers();
 
-        const fetchSuggestions = async () => {
-            try {
-                const currentUserSnap = await db.ref(`users/${user.id}`).once('value').catch(() => null);
-                const currentUserData = currentUserSnap && currentUserSnap.exists() ? currentUserSnap.val() : {};
-                const city = currentUserData.city || user.city;
-                const state = currentUserData.state || user.state;
-                if (city && state) {
-                    const locationSnap = await db.ref(`location_users/${state}/${city}`).limitToLast(20).once('value').catch(() => null);
-                    if (locationSnap && locationSnap.exists()) {
-                        const userIds = Object.keys(locationSnap.val()).filter(id => id && id.trim() !== '' && id !== user.id);
-                        const promises = userIds.map(id => db.ref(`users/${id}`).once('value').catch(() => null));
-                        const snaps = await Promise.all(promises);
-                        const list = snaps.filter(s => s && s.exists()).map(s => ({ id: s.key, ...s.val() }));
-                        setFriendSuggestions(list.sort(() => 0.5 - Math.random()).slice(0, 5));
-                        return;
-                    }
-                }
-                setFriendSuggestions([]);
-            } catch (err) { setFriendSuggestions([]); }
-        };
-        fetchSuggestions();
-
         return () => { followsRef.off('value', followsListener); };
     }, [user.id]);
 
@@ -235,14 +270,9 @@ function SocialNetwork({ user, onClose }) {
     const handleLike = async (postId, hasLiked) => {
         const db = window.firebaseDB;
         if (!db) return;
-        // Otimista
         setPosts(prev => prev.map(p => {
             if (p.id === postId) {
-                return {
-                    ...p,
-                    hasLiked: !hasLiked,
-                    likesCount: !hasLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1)
-                };
+                return { ...p, hasLiked: !hasLiked, likesCount: !hasLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1) };
             }
             return p;
         }));
@@ -269,33 +299,7 @@ function SocialNetwork({ user, onClose }) {
         } catch (e) { showToast("Erro ao comentar."); }
     };
 
-    const handleShare = (post) => {
-        setPostToShare(post);
-        setShowShareModal(true);
-    };
-
-    const handleShareToChat = async (chatId, type) => {
-        if (!postToShare) return;
-        setSharingTo(prev => ({ ...prev, [chatId]: true }));
-        try {
-            const targetId = contacts.find(c => c.id === chatId)?.targetId || chatId;
-            const refPath = type === 'group' ? `groups/${chatId}/messages` : `chats/${[user.id, targetId].sort().join('_')}/messages`;
-            const shareUrl = `${window.location.origin}${window.location.pathname}?v=${postToShare.id}&from=${user.id}`;
-            await window.firebaseDB.ref(refPath).push({
-                senderId: user.id,
-                senderName: user.name,
-                type: 'shared_video',
-                postUrl: shareUrl,
-                mediaUrl: extractUrl(postToShare.mediaUrl),
-                postTitle: postToShare.content ? postToShare.content.substring(0, 50) : 'Vídeo',
-                timestamp: Date.now()
-            });
-            setSharedSuccess(prev => ({ ...prev, [chatId]: true }));
-        } catch (e) { showToast("Erro ao compartilhar."); }
-        finally { setSharingTo(prev => ({ ...prev, [chatId]: false })); }
-    };
-
-    const handleQuickShare = async () => { showToast("Compartilhamento rápido indisponível."); };
+    const handleShare = (post) => { setPostToShare(post); setShowShareModal(true); };
 
     const handleCameraCapture = async (file, type, audio, text) => {
         setIsUploading(true);
@@ -399,15 +403,118 @@ function SocialNetwork({ user, onClose }) {
         return matchesSearch && matchesType;
     });
 
+    // ⬇️ videoPosts: usa isVideoUrl (não confia no type)
     const videoPosts = filteredPosts.filter(p => {
         const url = extractUrl(p.mediaUrl) || (p.mediaUrls && extractUrl(p.mediaUrls[0]));
-        return p.type === 'video' || (url && (url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('-mp4') || url.includes('cdn-phantora')));
+        return isVideoUrl(url);
     });
 
     const isDark = theme === 'dark';
     const cardBg = 'bg-secondary border border-border rounded-xl shadow-card';
     const textMuted = 'text-text-secondary';
     const headerBg = 'bg-secondary/80 backdrop-blur-lg border-b border-border';
+
+    // ==========================================================
+    // PLAYER PERSONALIZADO DE VÍDEO (inline no feed)
+    // ==========================================================
+    const InlineVideoPlayer = ({ post }) => {
+        const videoRef = React.useRef(null);
+        const [isPlaying, setIsPlaying] = React.useState(false);
+        const [isMuted, setIsMuted] = React.useState(true);
+        const [progress, setProgress] = React.useState(0);
+        const [showOverlay, setShowOverlay] = React.useState(true);
+
+        const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
+        const authedUrl = cdnUrl(rawUrl);
+
+        const togglePlay = (e) => {
+            e.stopPropagation();
+            const vid = videoRef.current;
+            if (!vid) return;
+            if (vid.paused) { vid.play(); setIsPlaying(true); setShowOverlay(false); }
+            else { vid.pause(); setIsPlaying(false); setShowOverlay(true); }
+        };
+
+        const toggleMute = (e) => {
+            e.stopPropagation();
+            const vid = videoRef.current;
+            if (!vid) return;
+            vid.muted = !vid.muted;
+            setIsMuted(vid.muted);
+        };
+
+        const handleTimeUpdate = () => {
+            const vid = videoRef.current;
+            if (!vid) return;
+            if (vid.duration) setProgress((vid.currentTime / vid.duration) * 100);
+        };
+
+        const handleOpenFeed = (e) => {
+            e.stopPropagation();
+            // ⬇️ ABRE O VIDEOFEED COM ROLAGEM
+            const idx = videoPosts.findIndex(vp => vp.id === post.id);
+            const list = videoPosts.map(v => {
+                const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
+                return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id };
+            });
+            setInfiniteFeed(list);
+            setActiveVideoFeed(idx !== -1 ? idx : 0);
+        };
+
+        return (
+            <div className="relative w-full bg-black cursor-pointer" onClick={handleOpenFeed}>
+                <video
+                    ref={videoRef}
+                    src={authedUrl}
+                    playsInline
+                    muted={isMuted}
+                    loop
+                    preload="metadata"
+                    className="w-full max-h-[600px] object-contain pointer-events-none"
+                    onTimeUpdate={handleTimeUpdate}
+                    onPlay={() => { setIsPlaying(true); setShowOverlay(false); }}
+                    onPause={() => { setIsPlaying(false); setShowOverlay(true); }}
+                />
+
+                {/* Overlay de play */}
+                {showOverlay && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20">
+                            <div className="icon-play text-white text-4xl ml-1"></div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Barra de progresso */}
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                    <div className="h-full bg-white transition-all" style={{ width: `${progress}%` }}></div>
+                </div>
+
+                {/* Botões flutuantes */}
+                <div className="absolute bottom-3 right-3 flex gap-2">
+                    <button
+                        onClick={togglePlay}
+                        className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20 active:scale-90"
+                    >
+                        <div className={`text-white text-xl ${isPlaying ? 'icon-pause' : 'icon-play'}`}></div>
+                    </button>
+                    <button
+                        onClick={toggleMute}
+                        className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20 active:scale-90"
+                    >
+                        <div className={`text-white text-xl ${isMuted ? 'icon-volume-x' : 'icon-volume-2'}`}></div>
+                    </button>
+                    <button
+                        onClick={handleOpenFeed}
+                        className="w-10 h-10 rounded-full bg-purple-600/80 backdrop-blur-md flex items-center justify-center border border-white/20 active:scale-90"
+                        title="Abrir no feed"
+                    >
+                        <div className="icon-maximize-2 text-white text-lg"></div>
+                    </button>
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="fixed inset-0 bg-primary text-primary font-sans z-50 flex flex-col" data-name="social-network" data-file="components/SocialNetwork.js">
@@ -428,7 +535,7 @@ function SocialNetwork({ user, onClose }) {
                         className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer"
                         onClick={() => window.location.href = `canal.html?uid=${user.id}`}
                     />
-                    <div className="flex flex-col justify-center">
+                    <div className="flex flex-col">
                         <h1 className="text-lg font-bold hidden sm:block">Phantora</h1>
                         <span className="text-yellow-500 font-bold text-xs">{followerStats.count} {followerStats.count === 1 ? 'seguidor' : 'seguidores'}</span>
                     </div>
@@ -450,12 +557,12 @@ function SocialNetwork({ user, onClose }) {
                 </div>
             </header>
 
-            {/* Mobile Bottom Nav */}
+            {/* Mobile Nav */}
             <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center justify-between w-[90%] max-w-[400px] shadow-lg">
-                <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center gap-1 ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary'}`}>
+                <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary'}`}>
                     <div className="icon-house text-2xl"></div>
                 </button>
-                <button onClick={() => setDesktopView('chat')} className={`flex flex-col items-center gap-1 ${desktopView === 'chat' ? 'text-accent' : 'text-text-secondary'}`}>
+                <button onClick={() => setDesktopView('chat')} className={`flex flex-col items-center ${desktopView === 'chat' ? 'text-accent' : 'text-text-secondary'}`}>
                     <div className="icon-message-circle text-2xl"></div>
                 </button>
                 <button onClick={() => window.location.href = 'upload.html'} className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-blue-500 text-white shadow-lg -mt-6 border-4 border-primary">
@@ -463,13 +570,17 @@ function SocialNetwork({ user, onClose }) {
                 </button>
                 <button onClick={() => {
                     if (videoPosts.length > 0) {
-                        setInfiniteFeed(videoPosts.map(v => ({...v, uniqueKey: v.id})));
+                        const list = videoPosts.map(v => {
+                            const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
+                            return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id };
+                        });
+                        setInfiniteFeed(list);
                         setActiveVideoFeed(0);
                     } else showToast("Nenhum vídeo.");
-                }} className="flex flex-col items-center gap-1 text-text-secondary">
+                }} className="flex flex-col items-center text-text-secondary">
                     <div className="icon-circle-play text-2xl"></div>
                 </button>
-                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="flex flex-col items-center gap-1 text-text-secondary">
+                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="flex flex-col items-center text-text-secondary">
                     <div className="icon-user text-2xl"></div>
                 </button>
             </div>
@@ -488,7 +599,11 @@ function SocialNetwork({ user, onClose }) {
                 <button onClick={() => {
                     if (videoPosts.length > 0) {
                         setDesktopView('feed');
-                        setInfiniteFeed(videoPosts.map(v => ({...v, uniqueKey: v.id})));
+                        const list = videoPosts.map(v => {
+                            const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
+                            return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id };
+                        });
+                        setInfiniteFeed(list);
                         setActiveVideoFeed(0);
                     } else showToast("Nenhum vídeo.");
                 }} className="p-3 rounded-xl text-text-secondary" title="Vídeos">
@@ -515,7 +630,7 @@ function SocialNetwork({ user, onClose }) {
                                 <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-indigo-600">
                                     <img src={story.authorAvatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-full h-full rounded-full object-cover border-2" />
                                 </div>
-                                <span className="text-xs font-medium max-w-[64px] truncate text-text-primary">{(story.authorName || 'Usuário').split(' ')[0]}</span>
+                                <span className="text-xs max-w-[64px] truncate text-text-primary">{(story.authorName || 'Usuário').split(' ')[0]}</span>
                             </div>
                         ))}
                     </div>
@@ -536,21 +651,12 @@ function SocialNetwork({ user, onClose }) {
                         <div className="absolute left-0 top-0 w-1/3 h-full z-10" onClick={() => setActiveStory(prev => prev > 0 ? prev - 1 : prev)}></div>
                         <div className="absolute right-0 top-0 w-1/3 h-full z-10" onClick={() => setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null)}></div>
                         {(() => {
-                            const url = extractUrl(stories[activeStory].mediaUrl);
-                            return (url.match(/\.(mp4|webm|ogg|mov)$/i) || stories[activeStory].type === 'video') 
-                                ? <video src={url} autoPlay playsInline className="max-w-full max-h-full object-contain" onEnded={() => setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null)} />
+                            const rawUrl = extractUrl(stories[activeStory].mediaUrl);
+                            const url = cdnUrl(rawUrl);
+                            return isVideoUrl(rawUrl)
+                                ? <video src={url} autoPlay playsInline controls className="max-w-full max-h-full object-contain" onEnded={() => setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null)} />
                                 : <img src={url} className="max-w-full max-h-full object-contain" />;
                         })()}
-                    </div>
-                </div>
-            )}
-
-            {/* Profile Modal */}
-            {selectedUser && (
-                <div className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4">
-                    <div className={`${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-sm rounded-2xl shadow-xl p-6 text-center`}>
-                        <img src={selectedUser.avatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-24 h-24 rounded-full object-cover mx-auto border-4 border-indigo-100 mb-4" />
-                        <h3 className="text-xl font-bold">{selectedUser.name || 'Usuário'}</h3>
                     </div>
                 </div>
             )}
@@ -578,7 +684,7 @@ function SocialNetwork({ user, onClose }) {
                         ) : (
                             filteredPosts.map(post => (
                                 <div key={post.id} id={`post-${post.id}`} className={cardBg}>
-                                    {/* Header do post */}
+                                    {/* Header */}
                                     <div className="p-4 flex justify-between items-start">
                                         <div className="flex items-center gap-3">
                                             <img 
@@ -611,16 +717,13 @@ function SocialNetwork({ user, onClose }) {
                                         </div>
                                     )}
 
-                                    {/* ============================================ */}
-                                    {/* MÍDIA — VÍDEO / IMAGEM / CARROSSEL / ENQUETE */}
-                                    {/* ============================================ */}
+                                    {/* MÍDIA */}
                                     {(() => {
-                                        // -------- ENQUETE --------
+                                        // ENQUETE
                                         if (post.type === 'poll') {
                                             if (window.PollViewer) {
                                                 return <window.PollViewer key={`poll-${post.id}`} post={post} user={user} />;
                                             }
-                                            // Fallback se PollViewer não carregou
                                             return (
                                                 <div className="p-4 border-t border-b border-border bg-tertiary/30">
                                                     <div className="font-bold text-lg mb-3 text-primary">{post.question || 'Enquete'}</div>
@@ -635,34 +738,34 @@ function SocialNetwork({ user, onClose }) {
                                             );
                                         }
 
-                                        // -------- CARROSSEL --------
+                                        // CARROSSEL
                                         if (post.type === 'carousel' && post.mediaUrls && post.mediaUrls.length > 0) {
                                             return (
                                                 <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
                                                     {post.mediaUrls.map((mUrlRaw, idx) => {
-                                                        const mUrl = extractUrl(mUrlRaw);
-                                                        if (!mUrl) return null;
-                                                        const isVid = mUrl.match(/\.(mp4|webm|ogg|mov)$/i) || mUrl.includes('video') || mUrl.includes('mp4');
-                                                        if (isVid) {
+                                                        const raw = extractUrl(mUrlRaw);
+                                                        if (!raw) return null;
+                                                        const url = cdnUrl(raw);
+                                                        if (isVideoUrl(raw)) {
                                                             return (
                                                                 <div key={idx} className="w-full shrink-0 snap-center bg-black flex justify-center">
-                                                                    <video src={mUrl} playsInline controls className="w-full max-h-[500px] object-contain" />
+                                                                    <video src={url} playsInline controls className="w-full max-h-[500px] object-contain" />
                                                                 </div>
                                                             );
                                                         }
-                                                        return <img key={idx} src={mUrl} onError={(e) => { e.target.style.display = 'none'; }} className="w-full shrink-0 snap-center max-h-[500px] object-contain bg-black" loading="lazy" />;
+                                                        return <img key={idx} src={url} onError={(e) => { e.target.style.display = 'none'; }} className="w-full shrink-0 snap-center max-h-[500px] object-contain bg-black" loading="lazy" />;
                                                     })}
                                                 </div>
                                             );
                                         }
 
-                                        // -------- URL ÚNICA --------
-                                        const urlRaw = post.mediaUrl || (post.mediaUrls && post.mediaUrls[0]);
-                                        const url = extractUrl(urlRaw);
-                                        if (!url) return null;
+                                        // URL ÚNICA
+                                        const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
+                                        if (!rawUrl) return null;
+                                        const url = cdnUrl(rawUrl);
 
-                                        // YouTube
-                                        const ytId = getYoutubeId(url);
+                                        // YOUTUBE
+                                        const ytId = getYoutubeId(rawUrl);
                                         if (ytId) {
                                             return (
                                                 <div className="relative w-full bg-black" style={{ aspectRatio: '16/9' }}>
@@ -671,28 +774,12 @@ function SocialNetwork({ user, onClose }) {
                                             );
                                         }
 
-                                        // Vídeo
-                                        const isVideo = post.type === 'video' 
-                                            || url.match(/\.(mp4|webm|ogg|mov)$/i) 
-                                            || url.includes('-mp4') 
-                                            || url.includes('cdn-phantora')
-                                            || url.includes('/video');
-
-                                        if (isVideo) {
-                                            return (
-                                                <div className="w-full bg-black flex justify-center">
-                                                    <video 
-                                                        src={url} 
-                                                        playsInline 
-                                                        controls
-                                                        preload="metadata" 
-                                                        className="w-full max-h-[600px] object-contain"
-                                                    />
-                                                </div>
-                                            );
+                                        // VÍDEO (player personalizado)
+                                        if (isVideoUrl(rawUrl)) {
+                                            return <InlineVideoPlayer post={post} />;
                                         }
 
-                                        // Imagem
+                                        // IMAGEM
                                         return (
                                             <img 
                                                 src={url} 
@@ -772,7 +859,7 @@ function SocialNetwork({ user, onClose }) {
                     handleShare={handleShare}
                     quickShareUserId={quickShareUserId}
                     quickShareUserAvatar={quickShareUserAvatar}
-                    handleQuickShare={handleQuickShare}
+                    handleQuickShare={async () => showToast("Indisponível")}
                     isQuickSharing={isQuickSharing}
                     quickShareSuccess={quickShareSuccess}
                     renderTextWithHashtags={renderTextWithHashtags}
@@ -783,56 +870,19 @@ function SocialNetwork({ user, onClose }) {
             {/* Share Modal */}
             {showShareModal && postToShare && (
                 <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4">
-                    <div className={`${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-sm rounded-2xl shadow-xl overflow-hidden max-h-[80vh] flex flex-col`}>
+                    <div className={`${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-sm rounded-2xl shadow-xl overflow-hidden`}>
                         <div className="p-4 border-b flex justify-between items-center">
-                            <h3 className="font-bold text-lg">Compartilhar</h3>
-                            <button onClick={() => setShowShareModal(false)} className="text-gray-400">
-                                <div className="icon-x text-xl"></div>
-                            </button>
+                            <h3 className="font-bold">Compartilhar</h3>
+                            <button onClick={() => setShowShareModal(false)} className="text-gray-400"><div className="icon-x text-xl"></div></button>
                         </div>
-                        <div className="p-4 flex gap-4 border-b">
-                            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?v=${postToShare.id}`); showToast("Link copiado!"); }} className="flex flex-col items-center gap-2 min-w-[70px]">
-                                <div className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-100 dark:bg-gray-700"><div className="icon-link"></div></div>
-                                <span className="text-xs">Copiar</span>
+                        <div className="p-4">
+                            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?v=${postToShare.id}`); showToast("Link copiado!"); }} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold">
+                                Copiar Link
                             </button>
-                            <button onClick={() => { const text = `Confira: ${window.location.origin}${window.location.pathname}?v=${postToShare.id}`; window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`); }} className="flex flex-col items-center gap-2 min-w-[70px]">
-                                <div className="w-12 h-12 rounded-full bg-green-500 text-white flex items-center justify-center"><div className="icon-message-circle"></div></div>
-                                <span className="text-xs">WhatsApp</span>
-                            </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-2">
-                            {contacts.length === 0 ? (
-                                <div className="text-center py-8 text-gray-500 text-sm">Nenhum contato.</div>
-                            ) : contacts.map(c => (
-                                <div key={c.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <div className="flex items-center gap-3">
-                                        <img src={c.avatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-10 h-10 rounded-full object-cover" />
-                                        <span className="font-bold text-sm">{c.name}</span>
-                                    </div>
-                                    <button onClick={() => handleShareToChat(c.id, c.type)} className={`px-4 py-1.5 rounded-full text-xs font-bold ${sharedSuccess[c.id] ? 'bg-green-500 text-white' : 'bg-indigo-600 text-white'}`}>
-                                        {sharedSuccess[c.id] ? '✓' : 'Enviar'}
-                                    </button>
-                                </div>
-                            ))}
                         </div>
                     </div>
                 </div>
             )}
-
-            {pendingLink && (
-                <div className="fixed inset-0 z-[300] bg-black/80 flex items-center justify-center p-4">
-                    <div className="bg-gray-800 rounded-2xl p-6 max-w-sm w-full text-center">
-                        <h3 className="text-xl font-bold text-white mb-2">Sair do Phantora?</h3>
-                        <p className="text-xs text-gray-500 mb-6 break-all bg-gray-900 p-2 rounded">{pendingLink.url}</p>
-                        <div className="flex gap-3">
-                            <button onClick={() => setPendingLink(null)} className="flex-1 py-3 bg-gray-700 text-white rounded-xl font-bold">Cancelar</button>
-                            <button onClick={() => { window.open(pendingLink.url, '_blank'); setPendingLink(null); }} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold">Acessar</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showDiscovery && window.FriendSwipe && <window.FriendSwipe user={user} onClose={() => setShowDiscovery(false)} />}
 
             {showCamera && window.MediaCapture && (
                 <window.MediaCapture 
