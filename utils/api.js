@@ -21,25 +21,11 @@ window.addEventListener('unhandledrejection', function(event) {
 // ==========================================================
 function waitForAuthReady(timeout = 5000) {
     return new Promise((resolve, reject) => {
-        if (window.firebaseAuth?.currentUser) {
-            return resolve(window.firebaseAuth.currentUser);
-        }
-
+        if (window.firebaseAuth?.currentUser) return resolve(window.firebaseAuth.currentUser);
         const auth = window.firebaseAuth || (typeof firebase !== 'undefined' && firebase.auth ? firebase.auth() : null);
-        
-        if (!auth) {
-            return reject(new Error("Firebase Auth não disponível"));
-        }
-
-        if (auth.currentUser) {
-            return resolve(auth.currentUser);
-        }
-
-        const timeoutId = setTimeout(() => {
-            unsubscribe();
-            reject(new Error("Timeout aguardando autenticação"));
-        }, timeout);
-
+        if (!auth) return reject(new Error("Firebase Auth não disponível"));
+        if (auth.currentUser) return resolve(auth.currentUser);
+        const timeoutId = setTimeout(() => { unsubscribe(); reject(new Error("Timeout aguardando autenticação")); }, timeout);
         const unsubscribe = auth.onAuthStateChanged((user) => {
             clearTimeout(timeoutId);
             unsubscribe();
@@ -55,16 +41,10 @@ async function getFirebaseToken() {
     try {
         console.log("⏳ [getFirebaseToken] Aguardando sessão...");
         const user = await waitForAuthReady(5000);
-
-        if (!user) {
-            console.error("❌ [getFirebaseToken] Sem usuário logado");
-            return null;
-        }
-
+        if (!user) { console.error("❌ Sem usuário logado"); return null; }
         const token = await user.getIdToken(true);
-        console.log("✅ [getFirebaseToken] Token gerado:", token.substring(0, 30) + "...");
+        console.log("✅ [getFirebaseToken] Token gerado");
         return token;
-
     } catch (e) {
         console.error("❌ [getFirebaseToken] Erro:", e.message);
         return null;
@@ -72,7 +52,42 @@ async function getFirebaseToken() {
 }
 
 const api = {
+  // ==========================================================
+  // AUTENTICAÇÃO (para uso de outros componentes)
+  // ==========================================================
+  getAuthToken: async () => {
+      return await getFirebaseToken();
+  },
+
+  getAuthedUrl: async (url) => {
+      if (!url || typeof url !== 'string') return url;
+      if (!url.includes('cdn-phantora') && !url.includes('puter.work')) return url;
+      if (url.includes('auth=')) return url;
+      const token = await getFirebaseToken();
+      if (!token) return url;
+      const sep = url.includes('?') ? '&' : '?';
+      return `${url}${sep}auth=${encodeURIComponent(token)}`;
+  },
+
+  authedMedia: async (post) => {
+      if (!post) return post;
+      const applyAuth = async (u) => {
+          if (!u) return u;
+          if (typeof u === 'string') return await api.getAuthedUrl(u);
+          if (typeof u === 'object' && u.url) return { ...u, url: await api.getAuthedUrl(u.url) };
+          return u;
+      };
+      const newPost = { ...post };
+      if (newPost.mediaUrl) newPost.mediaUrl = await applyAuth(newPost.mediaUrl);
+      if (Array.isArray(newPost.mediaUrls)) {
+          newPost.mediaUrls = await Promise.all(newPost.mediaUrls.map(applyAuth));
+      }
+      return newPost;
+  },
+
+  // ==========================================================
   // CodeHUB API
+  // ==========================================================
   getCodeHubUser: async (userkey) => {
     try {
       const response = await fetch(`https://code-hub-eta.vercel.app/api/userkey.js?userkey=${encodeURIComponent(userkey)}`);
@@ -83,15 +98,14 @@ const api = {
     }
   },
 
+  // ==========================================================
   // Firebase Realtime Database REST API
+  // ==========================================================
   getAuthMap: async (privateId) => {
     try {
       const response = await fetch(`https://html-785e3-default-rtdb.firebaseio.com/auth_map/${privateId}.json`);
       return await response.json();
-    } catch (error) {
-      console.error('Firebase Get Auth Map Error:', error);
-      throw error;
-    }
+    } catch (error) { console.error('Firebase Get Auth Map Error:', error); throw error; }
   },
 
   saveAuthMap: async (privateId, publicId) => {
@@ -102,20 +116,14 @@ const api = {
         body: JSON.stringify({ publicId })
       });
       return await response.json();
-    } catch (error) {
-      console.error('Firebase Save Auth Map Error:', error);
-      throw error;
-    }
+    } catch (error) { console.error('Firebase Save Auth Map Error:', error); throw error; }
   },
 
   getFirebaseUser: async (publicId) => {
     try {
       const response = await fetch(`https://html-785e3-default-rtdb.firebaseio.com/users/${publicId}.json`);
       return await response.json();
-    } catch (error) {
-      console.error('Firebase Get Error:', error);
-      throw error;
-    }
+    } catch (error) { console.error('Firebase Get Error:', error); throw error; }
   },
 
   saveFirebaseUser: async (publicId, data) => {
@@ -126,12 +134,12 @@ const api = {
         body: JSON.stringify(data)
       });
       return await response.json();
-    } catch (error) {
-      console.error('Firebase Save Error:', error);
-      throw error;
-    }
+    } catch (error) { console.error('Firebase Save Error:', error); throw error; }
   },
   
+  // ==========================================================
+  // HELPERS DE ARQUIVO
+  // ==========================================================
   fileToBase64: (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -147,11 +155,9 @@ const api = {
       reader.onload = async function() {
         try {
           const URL = "https://script.google.com/macros/s/AKfycbzYlwb6VwgfW9R2ZKQ3QEIvPwakVAAdcfLxPN8gIFcMdpAzyTsZn1ZnglCuwKEpkOla/exec";
-          
           const payload = { action: action, file: reader.result };
           if (action === "replace" && targetName) payload.targetName = targetName;
           else payload.fileName = file.name;
-
           const resposta = await fetch(URL, {
             method: "POST",
             headers: { "Content-Type": "text/plain" },
@@ -177,10 +183,7 @@ const api = {
       });
       const dados = await resposta.json();
       return dados.success || true;
-    } catch (e) {
-      console.error(e);
-      return false;
-    }
+    } catch (e) { console.error(e); return false; }
   },
 
   compressImage: (file, maxWidth = 800, quality = 0.6) => {
@@ -193,10 +196,7 @@ const api = {
         img.onload = () => {
           const canvas = document.createElement('canvas');
           let width = img.width, height = img.height;
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
+          if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
@@ -209,6 +209,9 @@ const api = {
     });
   },
 
+  // ==========================================================
+  // NOTIFICAÇÕES
+  // ==========================================================
   sendCallNotificationDirect: async (pushIds, callUrl) => {
     if (pushIds && pushIds.length > 0) {
         const idsStr = pushIds.join(',');
@@ -217,11 +220,7 @@ const api = {
         const urlEnc = encodeURIComponent(callUrl);
         const buttons = encodeURIComponent(`Atender;${callUrl}`);
         const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${idsStr}&titulo=${titulo}&mensagem=${mensagem}&url=${urlEnc}&buttons=${buttons}`;
-        try {
-            await fetch(scriptUrl, { mode: 'no-cors' });
-        } catch (e) {
-            console.warn('Notification error:', e);
-        }
+        try { await fetch(scriptUrl, { mode: 'no-cors' }); } catch (e) {}
     }
   },
 
@@ -241,18 +240,10 @@ const api = {
         const urlEnc = encodeURIComponent(callUrl);
         const buttons = encodeURIComponent(`Atender;${callUrl}`);
         const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${idsStr}&titulo=${titulo}&mensagem=${mensagem}&url=${urlEnc}&buttons=${buttons}`;
-        try {
-            await fetch(scriptUrl, { mode: 'no-cors' });
-            return true;
-        } catch (err) {
-            return false;
-        }
+        try { await fetch(scriptUrl, { mode: 'no-cors' }); return true; } catch (err) { return false; }
       }
       return false;
-    } catch (error) {
-      console.error('Call Notification Error:', error);
-      return false;
-    }
+    } catch (error) { console.error('Call Notification Error:', error); return false; }
   },
 
   sendNotification: async (targetUserId, title, message) => {
@@ -264,9 +255,7 @@ const api = {
         const titulo = encodeURIComponent(title);
         const mensagem = encodeURIComponent(message);
         const scriptUrl = `https://script.google.com/macros/s/AKfycbyAJYuSOdIa2ijOToQy0X_ZgM7N7e3lH5fPYORipXumqFw9OaNQ7CbYlz8oefsaL7qu/exec?ids=${pushId}&titulo=${titulo}&mensagem=${mensagem}`;
-        try {
-            await fetch(scriptUrl, { mode: 'no-cors' });
-        } catch (e) { console.error(e); }
+        try { await fetch(scriptUrl, { mode: 'no-cors' }); } catch (e) { console.error(e); }
       }
     } catch (error) { console.error(error); }
   },
@@ -275,41 +264,26 @@ const api = {
     if (!window.firebaseDB) return;
     try {
         const statusRef = window.firebaseDB.ref(`users/${userId}/status`);
-        await statusRef.update({
-            online: isOnline,
-            lastSeen: window.firebase.database.ServerValue.TIMESTAMP
-        });
+        await statusRef.update({ online: isOnline, lastSeen: window.firebase.database.ServerValue.TIMESTAMP });
         if (isOnline) {
-            statusRef.onDisconnect().update({
-                online: false,
-                lastSeen: window.firebase.database.ServerValue.TIMESTAMP
-            });
+            statusRef.onDisconnect().update({ online: false, lastSeen: window.firebase.database.ServerValue.TIMESTAMP });
         }
-    } catch (e) {
-        console.error("Erro ao definir status online:", e);
-    }
+    } catch (e) { console.error("Erro status:", e); }
   },
 
   // ==========================================================
-  // UPLOAD PARA CDN — ENVIA TÍTULO + METADADOS (OBRIGATÓRIOS)
+  // UPLOAD PARA CDN — DIRETO, SEM PROXY, COM METADADOS
   // ==========================================================
   uploadToCDN: async (file, uid, folderType, metadata = {}) => {
     console.log("🚀 [uploadToCDN] Iniciando...");
     console.log("   file:", file?.name, file?.size, "bytes");
-    console.log("   uid:", uid);
-    console.log("   folderType:", folderType);
     console.log("   metadata:", metadata);
 
-    // 1. Gera token fresco agora
     const token = await getFirebaseToken();
-
-    if (!token) {
-        throw new Error("Usuário não autenticado. Faça login para enviar arquivos.");
-    }
+    if (!token) throw new Error("Usuário não autenticado. Faça login para enviar arquivos.");
 
     console.log("   ✅ Token gerado");
 
-    // 2. Detecta o tipo automaticamente
     let detectedType = metadata.type;
     if (!detectedType) {
         if (file.type.startsWith('video/')) detectedType = 'video';
@@ -317,30 +291,18 @@ const api = {
         else detectedType = 'text';
     }
 
-    // 3. Monta FormData COM todos os campos obrigatórios
     const formData = new FormData();
     formData.append('file', file);
     formData.append('folder', `${uid}/${folderType}`);
-    formData.append('title', metadata.title || 'Sem título');     // ⬅️ OBRIGATÓRIO
+    formData.append('title', metadata.title || 'Sem título');
     formData.append('description', metadata.description || '');
     formData.append('type', detectedType);
     formData.append('textContent', metadata.textContent || '');
 
-    console.log("   📦 FormData montado:");
-    console.log("      - title:", metadata.title || 'Sem título');
-    console.log("      - type:", detectedType);
-    console.log("      - folder:", `${uid}/${folderType}`);
-
-    // 4. Monta URL com token
     const uploadUrl = `https://cdn-phantora-api.puter.work/upload?auth=${encodeURIComponent(token)}`;
     console.log("   📤 Enviando para CDN...");
 
-    // 5. Faz o upload DIRETO
-    const res = await fetch(uploadUrl, {
-        method: "POST",
-        body: formData
-    });
-
+    const res = await fetch(uploadUrl, { method: "POST", body: formData });
     console.log("   📥 Status:", res.status);
 
     if (!res.ok) {
@@ -349,19 +311,14 @@ const api = {
         throw new Error(`Servidor retornou status ${res.status}: ${errText.substring(0, 100)}`);
     }
 
-    // 6. Processa resposta
     const text = await res.text();
     let data;
-    try {
-        data = JSON.parse(text);
-    } catch (e) {
-        console.error("   ❌ Resposta não é JSON:", text.substring(0, 200));
-        throw new Error("Servidor da CDN retornou resposta inválida.");
-    }
+    try { data = JSON.parse(text); }
+    catch (e) { throw new Error("Servidor da CDN retornou resposta inválida."); }
 
     if (data.success) {
-        console.log("   ✅ Upload OK! Resposta completa:", data);
-        return data;  // ⬅️ Retorna TUDO (success, url, postId, etc.)
+        console.log("   ✅ Upload OK! Resposta:", data);
+        return data;
     } else {
         console.error("   ❌ success: false", data);
         throw new Error(data.error || 'Erro no upload para CDN');
@@ -369,7 +326,7 @@ const api = {
   },
 
   // ==========================================================
-  // DELETE DO CDN — SEM PROXY
+  // DELETE DO CDN — DIRETO, SEM PROXY
   // ==========================================================
   deleteFromCDN: async (filename) => {
     const key = "phantora-secret-key-123";
@@ -385,10 +342,7 @@ const api = {
         });
         const data = await res.json();
         return data.success;
-    } catch (err) {
-        console.error("Delete CDN Error:", err);
-        return false;
-    }
+    } catch (err) { console.error("Delete CDN Error:", err); return false; }
   }
 };
 
