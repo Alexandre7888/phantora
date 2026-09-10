@@ -41,6 +41,20 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
     const [torchOn, setTorchOn] = React.useState(false);
     const [captureMode, setCaptureMode] = React.useState('photo');
     const [showSettings, setShowSettings] = React.useState(false);
+    
+    // Estados para as abas (câmera, texto, enquete)
+    const [activeTab, setActiveTab] = React.useState(0);
+    const [startX, setStartX] = React.useState(null);
+    const [currentTranslate, setCurrentTranslate] = React.useState(0);
+    const isSwiping = React.useRef(false);
+    
+    // Estados para Texto
+    const [textTitle, setTextTitle] = React.useState('');
+    const [textBody, setTextBody] = React.useState('');
+    
+    // Estados para Enquete
+    const [pollQuestion, setPollQuestion] = React.useState('');
+    const [pollOptions, setPollOptions] = React.useState(['', '']);
 
     const audioContextRef = React.useRef(null);
     const micGainRef = React.useRef(null);
@@ -56,6 +70,37 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
         { id: 'mask_anon', name: 'Máscara', type: 'face', url: 'https://cdn-icons-png.flaticon.com/512/2821/2821035.png' },
         { id: 'hat_crown', name: 'Coroa', type: 'head', url: 'https://cdn-icons-png.flaticon.com/512/1004/1004733.png' }
     ]);
+
+    const tabs = ['Câmera', 'Texto', 'Enquete'];
+    
+    // Verifica se está na aba da câmera
+    const isCameraTab = activeTab === 0;
+
+    // Swipe handlers
+    const handleTouchStart = (e) => {
+        setStartX(e.touches[0].clientX);
+        isSwiping.current = true;
+    };
+
+    const handleTouchMove = (e) => {
+        if (!isSwiping.current || startX === null) return;
+        const currentX = e.touches[0].clientX;
+        const diff = currentX - startX;
+        setCurrentTranslate(diff);
+    };
+
+    const handleTouchEnd = () => {
+        if (!isSwiping.current) return;
+        isSwiping.current = false;
+
+        if (currentTranslate < -50 && activeTab < tabs.length - 1) {
+            setActiveTab(prev => prev + 1);
+        } else if (currentTranslate > 50 && activeTab > 0) {
+            setActiveTab(prev => prev - 1);
+        }
+        setCurrentTranslate(0);
+        setStartX(null);
+    };
 
     React.useEffect(() => {
         const initDB = () => {
@@ -608,186 +653,442 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
     }
 
     return (
-        <div className={`${embedded ? 'absolute' : 'fixed'} inset-0 bg-black z-[100] flex flex-col select-none`} data-name="camera-capture" data-file="components/CameraCapture.js">
-            {/* Top Bar - SEM botão X */}
-            <div className={`absolute top-0 left-0 right-0 z-20 ${previewMedia ? 'hidden' : ''}`}>
-                <div className="mx-3 mt-4">
-                    <div className="backdrop-blur-xl bg-black/30 rounded-full border border-white/10 px-3 py-2 flex items-center justify-between shadow-2xl">
-                        {/* Espaço vazio no lugar do botão X */}
-                        <div className="w-10 h-10"></div>
+        <div className={`${embedded ? 'absolute' : 'fixed'} inset-0 bg-black z-[100] flex flex-col select-none overflow-hidden`} data-name="camera-capture" data-file="components/CameraCapture.js">
+            
+            {/* Swipeable Container com as 3 abas */}
+            <div 
+                className="flex-1 flex transition-transform duration-300 ease-out"
+                style={{ transform: `translateX(calc(-${activeTab * 100}vw + ${currentTranslate}px))` }}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+            >
+                {/* ============== ABA 0: CÂMERA ============== */}
+                <div className="w-screen h-full flex-shrink-0 relative">
+                    {/* Top Bar - APENAS na aba câmera */}
+                    {isCameraTab && !previewMedia && (
+                        <div className="absolute top-0 left-0 right-0 z-20">
+                            <div className="mx-3 mt-4">
+                                <div className="backdrop-blur-xl bg-black/30 rounded-full border border-white/10 px-3 py-2 flex items-center justify-between shadow-2xl">
+                                    <div className="w-10 h-10"></div>
 
-                        <button
-                            onClick={() => setShowAudioMenu(true)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-300 backdrop-blur-sm ${
-                                selectedAudio
-                                    ? 'bg-gradient-to-r from-purple-500/25 to-pink-500/25 border border-purple-400/40 shadow-[0_0_16px_rgba(192,80,255,0.25)]'
-                                    : 'bg-white/10 hover:bg-white/20 border border-white/10'
-                            }`}
-                        >
-                            <div className={`icon-music text-sm ${selectedAudio ? 'text-purple-300' : 'text-white'}`}></div>
-                            <span className="text-xs font-medium truncate max-w-[90px]">
-                                {selectedAudio ? selectedAudio.name : 'Adicionar Som'}
-                            </span>
-                            {selectedAudio && (
-                                <div className="w-5 h-5 rounded-full bg-purple-400/20 flex items-center justify-center">
-                                    <div className="icon-check text-[10px] text-purple-300"></div>
+                                    <button
+                                        onClick={() => setShowAudioMenu(true)}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-300 backdrop-blur-sm ${
+                                            selectedAudio
+                                                ? 'bg-gradient-to-r from-purple-500/25 to-pink-500/25 border border-purple-400/40 shadow-[0_0_16px_rgba(192,80,255,0.25)]'
+                                                : 'bg-white/10 hover:bg-white/20 border border-white/10'
+                                        }`}
+                                    >
+                                        <div className={`icon-music text-sm ${selectedAudio ? 'text-purple-300' : 'text-white'}`}></div>
+                                        <span className="text-xs font-medium truncate max-w-[90px]">
+                                            {selectedAudio ? selectedAudio.name : 'Adicionar Som'}
+                                        </span>
+                                        {selectedAudio && (
+                                            <div className="w-5 h-5 rounded-full bg-purple-400/20 flex items-center justify-center">
+                                                <div className="icon-check text-[10px] text-purple-300"></div>
+                                            </div>
+                                        )}
+                                    </button>
+
+                                    <div className="flex gap-1.5">
+                                        {/* Botão de Flash/Torch */}
+                                        {capabilities?.torch && (
+                                            <button
+                                                onClick={toggleTorch}
+                                                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
+                                                    torchOn ? 'bg-yellow-400 text-black shadow-[0_0_14px_rgba(250,204,21,0.6)]' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
+                                                }`}
+                                            >
+                                                <div className="icon-zap text-base"></div>
+                                            </button>
+                                        )}
+                                        {/* Botão de Filtro AR */}
+                                        {arEnabled && (
+                                            <button
+                                                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                                                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
+                                                    showFilterMenu || selectedFilter !== 'none' ? 'bg-gradient-to-br from-fuchsia-500/30 to-purple-500/30 text-fuchsia-300 border border-fuchsia-400/40' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
+                                                }`}
+                                            >
+                                                <div className="icon-sparkles text-base"></div>
+                                            </button>
+                                        )}
+                                        {/* Botão de Grid (linhas) */}
+                                        <button
+                                            onClick={() => setGridVisible(!gridVisible)}
+                                            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
+                                                gridVisible ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
+                                            }`}
+                                        >
+                                            <div className="icon-grid-3x3 text-base"></div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Video View */}
+                    <div className="absolute inset-0 overflow-hidden bg-black flex items-center justify-center">
+                        {!hasPermission && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 via-black to-gray-900">
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="w-16 h-16 rounded-full border-2 border-t-white border-white/20 animate-spin"></div>
+                                    <p className="text-white/60 text-sm">Iniciando câmera...</p>
+                                </div>
+                            </div>
+                        )}
+                        
+                        <div className="relative w-full h-full">
+                            <video 
+                                ref={videoRef} 
+                                autoPlay 
+                                playsInline 
+                                muted 
+                                className={`absolute w-full h-full object-cover ${facingMode === 'user' ? '-scale-x-100' : ''}`}
+                            />
+                            <canvas 
+                                ref={arCanvasRef} 
+                                className="absolute w-full h-full object-cover pointer-events-none z-10" 
+                            />
+                            <canvas ref={canvasRef} className="hidden" />
+                        </div>
+
+                        {gridVisible && (
+                            <div className="absolute inset-0 pointer-events-none flex flex-col justify-between z-10">
+                                <div className="w-full h-1/3 border-b border-white/20"></div>
+                                <div className="w-full h-1/3 border-b border-white/20"></div>
+                                <div className="absolute inset-0 flex justify-between">
+                                    <div className="h-full w-1/3 border-r border-white/20"></div>
+                                    <div className="h-full w-1/3 border-r border-white/20"></div>
+                                </div>
+                            </div>
+                        )}
+
+                        {showFlash && (
+                            <div className="absolute inset-0 bg-white z-30 animate-flash-out"></div>
+                        )}
+                        
+                        {!photoOnly && isRecording && (
+                            <div className="absolute top-24 left-1/2 -translate-x-1/2 z-20">
+                                <div className="backdrop-blur-xl bg-red-500/20 px-5 py-2 rounded-full border border-red-500/30 flex items-center gap-3 shadow-2xl">
+                                    <div className="relative">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+                                        <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></div>
+                                    </div>
+                                    <span className="text-white font-mono font-bold tracking-wider text-sm">
+                                        00:{recordingTime.toString().padStart(2, '0')}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {selectedAudio && !previewMedia && (
+                            <button 
+                                onClick={() => setShowVolumeControls(!showVolumeControls)}
+                                className="absolute right-4 top-24 z-20 w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center border border-white/10"
+                            >
+                                <div className="icon-volume-2 text-white text-lg"></div>
+                            </button>
+                        )}
+
+                        {showVolumeControls && selectedAudio && !previewMedia && (
+                            <div className="absolute right-4 top-36 z-20 animate-slide-in-right">
+                                <div className="backdrop-blur-xl bg-black/40 rounded-2xl p-4 border border-white/10 shadow-2xl">
+                                    <div className="flex gap-6">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="icon-mic text-white/60 text-sm"></div>
+                                            <input 
+                                                type="range" 
+                                                min="0" 
+                                                max="1" 
+                                                step="0.1" 
+                                                value={originalVolume} 
+                                                onChange={(e) => setOriginalVolume(parseFloat(e.target.value))}
+                                                className="h-24 w-1.5 appearance-none bg-white/20 rounded-full outline-none cursor-pointer"
+                                                style={{ WebkitAppearance: 'slider-vertical' }}
+                                            />
+                                            <span className="text-white/60 text-[10px] font-medium">Mic</span>
+                                        </div>
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="icon-music text-purple-400 text-sm"></div>
+                                            <input 
+                                                type="range" 
+                                                min="0" 
+                                                max="1" 
+                                                step="0.1" 
+                                                value={musicVolume} 
+                                                onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                                                className="h-24 w-1.5 appearance-none bg-purple-500/20 rounded-full outline-none cursor-pointer"
+                                                style={{ WebkitAppearance: 'slider-vertical' }}
+                                            />
+                                            <span className="text-white/60 text-[10px] font-medium">Music</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {capabilities?.zoom && (
+                            <div className="absolute left-4 top-1/2 -translate-y-1/2 h-48 z-20">
+                                <div className="backdrop-blur-xl bg-black/30 rounded-full py-4 px-2 border border-white/10">
+                                    <input 
+                                        type="range" 
+                                        min={capabilities.zoom.min} 
+                                        max={capabilities.zoom.max} 
+                                        step={capabilities.zoom.step || 0.1}
+                                        value={zoom}
+                                        onChange={handleZoomChange}
+                                        className="h-40 w-1 appearance-none bg-white/20 rounded-full outline-none cursor-pointer"
+                                        style={{ WebkitAppearance: 'slider-vertical' }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Filtros AR */}
+                    {showFilterMenu && !previewMedia && !showGallery && isCameraTab && (
+                        <div className="absolute bottom-[184px] left-0 right-0 z-20 px-4">
+                            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar snap-x" style={{ scrollbarWidth: 'none' }}>
+                                {filters.map(filter => (
+                                    <button
+                                        key={filter.id}
+                                        onClick={() => setSelectedFilter(filter.id)}
+                                        className="flex flex-col items-center gap-1.5 flex-shrink-0 snap-center"
+                                    >
+                                        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center backdrop-blur-md transition-all duration-300 overflow-hidden ${
+                                            selectedFilter === filter.id
+                                                ? 'border-2 border-fuchsia-400 bg-fuchsia-500/20 shadow-[0_0_18px_rgba(232,121,249,0.5)] scale-105'
+                                                : 'border border-white/15 bg-white/10 hover:bg-white/15'
+                                        }`}>
+                                            {filter.id === 'none' ? (
+                                                <div className="icon-ban text-white/70 text-xl"></div>
+                                            ) : (
+                                                <img src={filter.url} className="w-9 h-9 object-contain" alt={filter.name} />
+                                            )}
+                                        </div>
+                                        <span className={`text-[11px] font-medium truncate max-w-[64px] ${selectedFilter === filter.id ? 'text-fuchsia-300' : 'text-white/70'}`}>
+                                            {filter.name}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Controles inferiores - APENAS na aba câmera */}
+                    {isCameraTab && !previewMedia && !showGallery && (
+                        <div className="pb-10 bg-gradient-to-t from-black via-black/95 to-transparent pt-16 z-20 absolute bottom-0 left-0 right-0">
+                            {!photoOnly && !isRecording && (
+                                <div className="flex justify-center mb-6">
+                                    <div className="flex items-center gap-1 bg-black/40 backdrop-blur-md rounded-full p-1 border border-white/10">
+                                        <button
+                                            onClick={() => setCaptureMode('photo')}
+                                            className={`px-5 py-1.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${
+                                                captureMode === 'photo' ? 'bg-white text-black shadow-md' : 'text-white/60'
+                                            }`}
+                                        >
+                                            FOTO
+                                        </button>
+                                        <button
+                                            onClick={() => setCaptureMode('video')}
+                                            className={`px-5 py-1.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${
+                                                captureMode === 'video' ? 'bg-red-500 text-white shadow-md shadow-red-500/30' : 'text-white/60'
+                                            }`}
+                                        >
+                                            VÍDEO
+                                        </button>
+                                    </div>
                                 </div>
                             )}
-                        </button>
 
-                        <div className="flex gap-1.5">
-                            {capabilities?.torch && (
+                            <div className="flex items-center justify-between px-10 max-w-md mx-auto">
                                 <button
-                                    onClick={toggleTorch}
-                                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
-                                        torchOn ? 'bg-yellow-400 text-black shadow-[0_0_14px_rgba(250,204,21,0.6)]' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
-                                    }`}
+                                    onClick={() => setShowGallery(true)}
+                                    className="relative w-12 h-12 rounded-2xl active:scale-90 transition-all duration-200"
                                 >
-                                    <div className="icon-zap text-base"></div>
+                                    <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-br from-fuchsia-500 via-purple-500 to-cyan-400 opacity-80"></div>
+                                    <div className="relative w-full h-full rounded-2xl bg-black overflow-hidden flex items-center justify-center border border-black">
+                                        {galleryMedia.length > 0 ? (
+                                            <img src={galleryMedia[0].url} className="w-full h-full object-cover" alt="Gallery" />
+                                        ) : (
+                                            <div className="icon-image text-white text-lg"></div>
+                                        )}
+                                    </div>
                                 </button>
-                            )}
-                            {arEnabled && (
+
+                                <div
+                                    className="relative cursor-pointer group select-none"
+                                    onMouseDown={handleButtonPress}
+                                    onMouseUp={handleButtonRelease}
+                                    onMouseLeave={handleButtonRelease}
+                                    onTouchStart={handleButtonPress}
+                                    onTouchEnd={handleButtonRelease}
+                                >
+                                    <div className={`absolute inset-0 rounded-full blur-xl transition-all duration-300 ${
+                                        isRecording
+                                            ? 'bg-red-500/40 scale-125'
+                                            : captureMode === 'video'
+                                                ? 'bg-red-500/20 scale-105'
+                                                : 'bg-white/25 scale-100 group-hover:scale-110'
+                                    }`}></div>
+
+                                    <div className={`relative w-[86px] h-[86px] rounded-full flex items-center justify-center transition-all duration-300 ${
+                                        isRecording
+                                            ? 'border-[4px] border-red-500 scale-110'
+                                            : captureMode === 'video'
+                                                ? 'border-[4px] border-red-400/80 group-hover:scale-105'
+                                                : 'border-[4px] border-white group-hover:scale-105'
+                                    }`}>
+                                        <div className={`transition-all duration-300 shadow-2xl ${
+                                            isRecording
+                                                ? 'w-8 h-8 bg-red-500 rounded-lg'
+                                                : captureMode === 'video'
+                                                    ? 'w-[68px] h-[68px] bg-red-500 rounded-full group-active:scale-90'
+                                                    : 'w-[70px] h-[70px] bg-white rounded-full group-active:scale-90'
+                                        }`}></div>
+                                    </div>
+
+                                    {!photoOnly && isRecording && (
+                                        <svg className="absolute inset-0 w-[86px] h-[86px] -rotate-90 pointer-events-none">
+                                            <circle
+                                                cx="43"
+                                                cy="43"
+                                                r="39"
+                                                fill="none"
+                                                stroke="url(#gradient)"
+                                                strokeWidth="4"
+                                                strokeLinecap="round"
+                                                strokeDasharray="245"
+                                                strokeDashoffset={245 - (recordingTime / 60) * 245}
+                                                className="transition-all duration-1000 ease-linear"
+                                            />
+                                            <defs>
+                                                <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                    <stop offset="0%" stopColor="#ff6b6b" />
+                                                    <stop offset="100%" stopColor="#ee5a24" />
+                                                </linearGradient>
+                                            </defs>
+                                        </svg>
+                                    )}
+                                </div>
+
                                 <button
-                                    onClick={() => setShowFilterMenu(!showFilterMenu)}
-                                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
-                                        showFilterMenu || selectedFilter !== 'none' ? 'bg-gradient-to-br from-fuchsia-500/30 to-purple-500/30 text-fuchsia-300 border border-fuchsia-400/40' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
-                                    }`}
+                                    onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
+                                    className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 backdrop-blur-md flex items-center justify-center border border-white/15 transition-all duration-200"
                                 >
-                                    <div className="icon-sparkles text-base"></div>
+                                    <div className="icon-refresh-cw text-white text-lg"></div>
                                 </button>
-                            )}
-                            <button
-                                onClick={() => setGridVisible(!gridVisible)}
-                                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 backdrop-blur-sm ${
-                                    gridVisible ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30' : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
-                                }`}
-                            >
-                                <div className="icon-grid-3x3 text-base"></div>
-                            </button>
+                            </div>
                         </div>
+                    )}
+                </div>
+
+                {/* ============== ABA 1: TEXTO ============== */}
+                <div className="w-screen h-full flex-shrink-0 flex items-center justify-center p-6 bg-gradient-to-br from-indigo-900/40 to-purple-900/40">
+                    <div className="w-full max-w-md bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                                <div className="icon-type text-2xl"></div>
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-white">Criar Texto</h3>
+                                <p className="text-white/50 text-sm">Compartilhe um pensamento</p>
+                            </div>
+                        </div>
+                        <input 
+                            type="text" 
+                            value={textTitle} 
+                            onChange={e => setTextTitle(e.target.value)} 
+                            placeholder="Título (opcional)" 
+                            className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-indigo-500 mb-4 transition-colors font-semibold text-white" 
+                        />
+                        <textarea 
+                            value={textBody} 
+                            onChange={e => setTextBody(e.target.value)} 
+                            placeholder="O que está acontecendo?" 
+                            className="w-full bg-white/5 border border-white/10 rounded-xl p-4 min-h-[200px] outline-none focus:border-indigo-500 resize-none transition-colors text-white" 
+                        ></textarea>
+                    </div>
+                </div>
+
+                {/* ============== ABA 2: ENQUETE ============== */}
+                <div className="w-screen h-full flex-shrink-0 flex items-center justify-center p-6 bg-gradient-to-br from-purple-900/40 to-pink-900/40">
+                    <div className="w-full max-w-md bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-12 h-12 rounded-full bg-pink-500/20 flex items-center justify-center text-pink-400">
+                                <div className="icon-chart-bar text-2xl"></div>
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-white">Criar Enquete</h3>
+                                <p className="text-white/50 text-sm">Faça uma pergunta</p>
+                            </div>
+                        </div>
+
+                        <input 
+                            type="text" 
+                            placeholder="Faça uma pergunta..." 
+                            value={pollQuestion} 
+                            onChange={e => setPollQuestion(e.target.value)} 
+                            className="w-full bg-white/10 border border-white/20 rounded-xl p-4 outline-none focus:border-pink-500 mb-6 font-bold text-lg transition-colors placeholder:text-white/40 text-white" 
+                        />
+
+                        <div className="space-y-3 mb-4 max-h-[40vh] overflow-y-auto pr-2">
+                            {pollOptions.map((opt, i) => (
+                                <div key={i} className="flex gap-2">
+                                    <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/50 font-bold shrink-0">
+                                        {String.fromCharCode(65 + i)}
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        placeholder={`Opção ${i+1}`} 
+                                        value={opt} 
+                                        onChange={e => {
+                                            const newOpts = [...pollOptions];
+                                            newOpts[i] = e.target.value;
+                                            setPollOptions(newOpts);
+                                        }} 
+                                        className="flex-1 bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-pink-500 transition-colors text-white" 
+                                    />
+                                    {pollOptions.length > 2 && (
+                                        <button 
+                                            onClick={() => setPollOptions(pollOptions.filter((_, idx) => idx !== i))}
+                                            className="w-12 h-12 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center hover:bg-red-500/30 transition-colors"
+                                        >
+                                            <div className="icon-trash"></div>
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {pollOptions.length < 5 && (
+                            <button 
+                                onClick={() => setPollOptions([...pollOptions, ''])} 
+                                className="w-full py-3 rounded-xl border border-dashed border-white/30 text-white/70 hover:bg-white/5 hover:text-white transition-colors flex items-center justify-center gap-2 font-bold"
+                            >
+                                <div className="icon-plus"></div> Adicionar opção
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
 
-            {/* Video View */}
-            <div className={`flex-1 relative overflow-hidden bg-black flex items-center justify-center ${previewMedia ? 'hidden' : ''}`}>
-                {!hasPermission && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 via-black to-gray-900">
-                        <div className="flex flex-col items-center gap-4">
-                            <div className="w-16 h-16 rounded-full border-2 border-t-white border-white/20 animate-spin"></div>
-                            <p className="text-white/60 text-sm">Iniciando câmera...</p>
-                        </div>
-                    </div>
-                )}
-                
-                <div className="relative w-full h-full">
-                    <video 
-                        ref={videoRef} 
-                        autoPlay 
-                        playsInline 
-                        muted 
-                        className={`absolute w-full h-full object-cover ${facingMode === 'user' ? '-scale-x-100' : ''}`}
-                    />
-                    
-                    <canvas 
-                        ref={arCanvasRef} 
-                        className="absolute w-full h-full object-cover pointer-events-none z-10" 
-                    />
-
-                    <canvas ref={canvasRef} className="hidden" />
+            {/* Bottom Navigation Tabs */}
+            <div className="absolute bottom-6 left-0 right-0 z-[210] flex justify-center pointer-events-none">
+                <div className="bg-black/50 backdrop-blur-xl border border-white/10 rounded-full flex items-center px-2 py-2 pointer-events-auto">
+                    {tabs.map((tab, idx) => (
+                        <button
+                            key={idx}
+                            onClick={() => setActiveTab(idx)}
+                            className={`px-4 py-2 rounded-full font-semibold transition-all duration-300 text-sm whitespace-nowrap ${activeTab === idx ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white'}`}
+                        >
+                            {tab}
+                        </button>
+                    ))}
                 </div>
-
-                {gridVisible && (
-                    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between z-10">
-                        <div className="w-full h-1/3 border-b border-white/20"></div>
-                        <div className="w-full h-1/3 border-b border-white/20"></div>
-                        <div className="absolute inset-0 flex justify-between">
-                            <div className="h-full w-1/3 border-r border-white/20"></div>
-                            <div className="h-full w-1/3 border-r border-white/20"></div>
-                        </div>
-                    </div>
-                )}
-
-                {showFlash && (
-                    <div className="absolute inset-0 bg-white z-30 animate-flash-out"></div>
-                )}
-                
-                {!photoOnly && isRecording && (
-                    <div className="absolute top-24 left-1/2 -translate-x-1/2 z-20">
-                        <div className="backdrop-blur-xl bg-red-500/20 px-5 py-2 rounded-full border border-red-500/30 flex items-center gap-3 shadow-2xl">
-                            <div className="relative">
-                                <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
-                                <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></div>
-                            </div>
-                            <span className="text-white font-mono font-bold tracking-wider text-sm">
-                                00:{recordingTime.toString().padStart(2, '0')}
-                            </span>
-                        </div>
-                    </div>
-                )}
-
-                {selectedAudio && !previewMedia && (
-                    <button 
-                        onClick={() => setShowVolumeControls(!showVolumeControls)}
-                        className="absolute right-4 top-24 z-20 w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center border border-white/10"
-                    >
-                        <div className="icon-volume-2 text-white text-lg"></div>
-                    </button>
-                )}
-
-                {showVolumeControls && selectedAudio && !previewMedia && (
-                    <div className="absolute right-4 top-36 z-20 animate-slide-in-right">
-                        <div className="backdrop-blur-xl bg-black/40 rounded-2xl p-4 border border-white/10 shadow-2xl">
-                            <div className="flex gap-6">
-                                <div className="flex flex-col items-center gap-3">
-                                    <div className="icon-mic text-white/60 text-sm"></div>
-                                    <input 
-                                        type="range" 
-                                        min="0" 
-                                        max="1" 
-                                        step="0.1" 
-                                        value={originalVolume} 
-                                        onChange={(e) => setOriginalVolume(parseFloat(e.target.value))}
-                                        className="h-24 w-1.5 appearance-none bg-white/20 rounded-full outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-lg"
-                                        style={{ WebkitAppearance: 'slider-vertical' }}
-                                    />
-                                    <span className="text-white/60 text-[10px] font-medium">Mic</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-3">
-                                    <div className="icon-music text-purple-400 text-sm"></div>
-                                    <input 
-                                        type="range" 
-                                        min="0" 
-                                        max="1" 
-                                        step="0.1" 
-                                        value={musicVolume} 
-                                        onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-                                        className="h-24 w-1.5 appearance-none bg-purple-500/20 rounded-full outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:bg-purple-400 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-lg"
-                                        style={{ WebkitAppearance: 'slider-vertical' }}
-                                    />
-                                    <span className="text-white/60 text-[10px] font-medium">Music</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {capabilities?.zoom && (
-                    <div className="absolute left-4 top-1/2 -translate-y-1/2 h-48 z-20">
-                        <div className="backdrop-blur-xl bg-black/30 rounded-full py-4 px-2 border border-white/10">
-                            <input 
-                                type="range" 
-                                min={capabilities.zoom.min} 
-                                max={capabilities.zoom.max} 
-                                step={capabilities.zoom.step || 0.1}
-                                value={zoom}
-                                onChange={handleZoomChange}
-                                className="h-40 w-1 appearance-none bg-white/20 rounded-full outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-lg"
-                                style={{ WebkitAppearance: 'slider-vertical' }}
-                            />
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Audio Menu */}
@@ -930,140 +1231,6 @@ function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false 
             {selectedAudio && (
                 <audio ref={audioPlayerRef} src={selectedAudio.mediaUrl} preload="auto" loop crossOrigin="anonymous" />
             )}
-
-            {showFilterMenu && !previewMedia && !showGallery && (
-                <div className="absolute bottom-[184px] left-0 right-0 z-20 px-4">
-                    <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar snap-x" style={{ scrollbarWidth: 'none' }}>
-                        {filters.map(filter => (
-                            <button
-                                key={filter.id}
-                                onClick={() => setSelectedFilter(filter.id)}
-                                className="flex flex-col items-center gap-1.5 flex-shrink-0 snap-center"
-                            >
-                                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center backdrop-blur-md transition-all duration-300 overflow-hidden ${
-                                    selectedFilter === filter.id
-                                        ? 'border-2 border-fuchsia-400 bg-fuchsia-500/20 shadow-[0_0_18px_rgba(232,121,249,0.5)] scale-105'
-                                        : 'border border-white/15 bg-white/10 hover:bg-white/15'
-                                }`}>
-                                    {filter.id === 'none' ? (
-                                        <div className="icon-ban text-white/70 text-xl"></div>
-                                    ) : (
-                                        <img src={filter.url} className="w-9 h-9 object-contain" alt={filter.name} />
-                                    )}
-                                </div>
-                                <span className={`text-[11px] font-medium truncate max-w-[64px] ${selectedFilter === filter.id ? 'text-fuchsia-300' : 'text-white/70'}`}>
-                                    {filter.name}
-                                </span>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Bottom Controls */}
-            <div className={`pb-10 bg-gradient-to-t from-black via-black/95 to-transparent pt-16 z-20 ${previewMedia || showGallery ? 'hidden' : ''} absolute bottom-0 left-0 right-0`}>
-                {!photoOnly && !isRecording && (
-                    <div className="flex justify-center mb-6">
-                        <div className="flex items-center gap-1 bg-black/40 backdrop-blur-md rounded-full p-1 border border-white/10">
-                            <button
-                                onClick={() => setCaptureMode('photo')}
-                                className={`px-5 py-1.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${
-                                    captureMode === 'photo' ? 'bg-white text-black shadow-md' : 'text-white/60'
-                                }`}
-                            >
-                                FOTO
-                            </button>
-                            <button
-                                onClick={() => setCaptureMode('video')}
-                                className={`px-5 py-1.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${
-                                    captureMode === 'video' ? 'bg-red-500 text-white shadow-md shadow-red-500/30' : 'text-white/60'
-                                }`}
-                            >
-                                VÍDEO
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                <div className="flex items-center justify-between px-10 max-w-md mx-auto">
-                    <button
-                        onClick={() => setShowGallery(true)}
-                        className="relative w-12 h-12 rounded-2xl active:scale-90 transition-all duration-200"
-                    >
-                        <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-br from-fuchsia-500 via-purple-500 to-cyan-400 opacity-80"></div>
-                        <div className="relative w-full h-full rounded-2xl bg-black overflow-hidden flex items-center justify-center border border-black">
-                            {galleryMedia.length > 0 ? (
-                                <img src={galleryMedia[0].url} className="w-full h-full object-cover" alt="Gallery" />
-                            ) : (
-                                <div className="icon-image text-white text-lg"></div>
-                            )}
-                        </div>
-                    </button>
-
-                    <div
-                        className="relative cursor-pointer group select-none"
-                        onMouseDown={handleButtonPress}
-                        onMouseUp={handleButtonRelease}
-                        onMouseLeave={handleButtonRelease}
-                        onTouchStart={handleButtonPress}
-                        onTouchEnd={handleButtonRelease}
-                    >
-                        <div className={`absolute inset-0 rounded-full blur-xl transition-all duration-300 ${
-                            isRecording
-                                ? 'bg-red-500/40 scale-125'
-                                : captureMode === 'video'
-                                    ? 'bg-red-500/20 scale-105'
-                                    : 'bg-white/25 scale-100 group-hover:scale-110'
-                        }`}></div>
-
-                        <div className={`relative w-[86px] h-[86px] rounded-full flex items-center justify-center transition-all duration-300 ${
-                            isRecording
-                                ? 'border-[4px] border-red-500 scale-110'
-                                : captureMode === 'video'
-                                    ? 'border-[4px] border-red-400/80 group-hover:scale-105'
-                                    : 'border-[4px] border-white group-hover:scale-105'
-                        }`}>
-                            <div className={`transition-all duration-300 shadow-2xl ${
-                                isRecording
-                                    ? 'w-8 h-8 bg-red-500 rounded-lg'
-                                    : captureMode === 'video'
-                                        ? 'w-[68px] h-[68px] bg-red-500 rounded-full group-active:scale-90'
-                                        : 'w-[70px] h-[70px] bg-white rounded-full group-active:scale-90'
-                            }`}></div>
-                        </div>
-
-                        {!photoOnly && isRecording && (
-                            <svg className="absolute inset-0 w-[86px] h-[86px] -rotate-90 pointer-events-none">
-                                <circle
-                                    cx="43"
-                                    cy="43"
-                                    r="39"
-                                    fill="none"
-                                    stroke="url(#gradient)"
-                                    strokeWidth="4"
-                                    strokeLinecap="round"
-                                    strokeDasharray="245"
-                                    strokeDashoffset={245 - (recordingTime / 60) * 245}
-                                    className="transition-all duration-1000 ease-linear"
-                                />
-                                <defs>
-                                    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                        <stop offset="0%" stopColor="#ff6b6b" />
-                                        <stop offset="100%" stopColor="#ee5a24" />
-                                    </linearGradient>
-                                </defs>
-                            </svg>
-                        )}
-                    </div>
-
-                    <button
-                        onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
-                        className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 backdrop-blur-md flex items-center justify-center border border-white/15 transition-all duration-200"
-                    >
-                        <div className="icon-refresh-cw text-white text-lg"></div>
-                    </button>
-                </div>
-            </div>
 
             {/* Gallery View */}
             {showGallery && (
