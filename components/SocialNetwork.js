@@ -1,40 +1,29 @@
 function SocialNetwork({ user, onClose }) {
     const [posts, setPosts] = React.useState([]);
     const [stories, setStories] = React.useState([]);
-
     const [lastPostKey, setLastPostKey] = React.useState(null);
     const [hasMorePosts, setHasMorePosts] = React.useState(true);
     const [isLoadingMore, setIsLoadingMore] = React.useState(false);
-
     const [activeStory, setActiveStory] = React.useState(null);
     const [activeCommentPost, setActiveCommentPost] = React.useState(null);
     const [commentText, setCommentText] = React.useState('');
-
     const [activeVideoFeed, setActiveVideoFeed] = React.useState(null);
     const [infiniteFeed, setInfiniteFeed] = React.useState([]);
     const [searchQuery, setSearchQuery] = React.useState('');
     const [showShareModal, setShowShareModal] = React.useState(false);
     const [postToShare, setPostToShare] = React.useState(null);
-    const [contacts, setContacts] = React.useState([]);
-    const [sharingTo, setSharingTo] = React.useState({});
-    const [sharedSuccess, setSharedSuccess] = React.useState({});
     const [quickShareUserId, setQuickShareUserId] = React.useState(null);
     const [quickShareUserAvatar, setQuickShareUserAvatar] = React.useState(null);
-    const [isQuickSharing, setIsQuickSharing] = React.useState(false);
-    const [quickShareSuccess, setQuickShareSuccess] = React.useState(false);
-    const [showDiscovery, setShowDiscovery] = React.useState(false);
     const [filterType, setFilterType] = React.useState('all');
     const [theme, setTheme] = React.useState(localStorage.getItem('social_theme') || 'light');
     const [toast, setToast] = React.useState(null);
     const [now, setNow] = React.useState(Date.now());
     const [following, setFollowing] = React.useState({});
     const [followerStats, setFollowerStats] = React.useState({ count: 0, lastUpdated: null });
-    const [pendingLink, setPendingLink] = React.useState(null);
     const [isUploading, setIsUploading] = React.useState(false);
     const [uploadStatus, setUploadStatus] = React.useState('');
     const [showCamera, setShowCamera] = React.useState(false);
     const [desktopView, setDesktopView] = React.useState('feed');
-    const [selectedUser, setSelectedUser] = React.useState(null);
     const [showSettings, setShowSettings] = React.useState(false);
     const [idToken, setIdToken] = React.useState(null);
 
@@ -47,24 +36,27 @@ function SocialNetwork({ user, onClose }) {
         localStorage.setItem('social_theme', theme);
     }, [theme]);
 
-    // ⬇️ PEGA O TOKEN DO FIREBASE (igual api.js faz)
+    // ⬇️ PEGA O TOKEN USANDO O api.js
     React.useEffect(() => {
         const fetchToken = async () => {
             try {
-                if (window.firebaseAuth?.currentUser) {
-                    const token = await window.firebaseAuth.currentUser.getIdToken(true);
-                    setIdToken(token);
-                    console.log("✅ [SocialNetwork] Token obtido");
-                } else if (typeof firebase !== 'undefined' && firebase.auth().currentUser) {
-                    const token = await firebase.auth().currentUser.getIdToken(true);
-                    setIdToken(token);
-                    console.log("✅ [SocialNetwork] Token via firebase.auth()");
+                let token = null;
+                if (window.api && typeof window.api.getAuthToken === 'function') {
+                    token = await window.api.getAuthToken();
+                    console.log("✅ [SocialNetwork] Token via window.api.getAuthToken()");
                 }
-            } catch (e) {
-                console.warn("Erro ao obter token:", e);
-            }
+                if (!token && window.firebaseAuth?.currentUser) {
+                    token = await window.firebaseAuth.currentUser.getIdToken(true);
+                }
+                if (token) {
+                    setIdToken(token);
+                    window._currentToken = token;
+                }
+            } catch (e) { console.error("Erro token:", e); }
         };
         fetchToken();
+        const interval = setInterval(fetchToken, 30 * 60 * 1000);
+        return () => clearInterval(interval);
     }, []);
 
     const showToast = (msg) => {
@@ -72,25 +64,15 @@ function SocialNetwork({ user, onClose }) {
         setTimeout(() => setToast(null), 3000);
     };
 
-    // ==========================================================
-    // HELPER: adiciona ?auth=TOKEN à URL do CDN
-    // ==========================================================
     const cdnUrl = (url) => {
         if (!url || typeof url !== 'string') return '';
-        // Só adiciona token se for URL do CDN da Phantora
-        if (url.includes('cdn-phantora') || url.includes('puter.work')) {
-            if (!idToken) return url;
-            // Se já tem ?auth=, não adiciona de novo
-            if (url.includes('auth=')) return url;
-            const sep = url.includes('?') ? '&' : '?';
-            return `${url}${sep}auth=${encodeURIComponent(idToken)}`;
-        }
-        return url;
+        if (!url.includes('cdn-phantora') && !url.includes('puter.work')) return url;
+        if (!idToken) return url;
+        if (url.includes('auth=')) return url;
+        const sep = url.includes('?') ? '&' : '?';
+        return `${url}${sep}auth=${encodeURIComponent(idToken)}`;
     };
 
-    // ==========================================================
-    // HELPER: extrai URL (aceita string ou objeto)
-    // ==========================================================
     const extractUrl = (item) => {
         if (!item) return '';
         if (typeof item === 'string') return item;
@@ -98,36 +80,26 @@ function SocialNetwork({ user, onClose }) {
         return '';
     };
 
-    // ==========================================================
-    // HELPER: detecta se é VÍDEO baseado na URL (não no type)
-    // ==========================================================
     const isVideoUrl = (url) => {
         if (!url || typeof url !== 'string') return false;
         const lower = url.toLowerCase();
-        // Extensões de vídeo
+        if (lower.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i)) return false;
         if (lower.match(/\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?|$)/i)) return true;
-        // Padrões do CDN (arquivos de vídeo têm -mp4)
         if (lower.includes('-mp4')) return true;
         if (lower.includes('.mp4')) return true;
         if (lower.includes('/video')) return true;
-        // Imagens NUNCA são vídeo
-        if (lower.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i)) return false;
         return false;
     };
 
-    const isImageUrl = (url) => {
-        if (!url || typeof url !== 'string') return false;
-        const lower = url.toLowerCase();
-        return lower.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i) !== null;
-    };
-
+    // ==========================================================
+    // CARREGAR POSTS + FOLLOWS + STORIES
+    // ==========================================================
     React.useEffect(() => {
         const db = window.firebaseDB;
         if (!db) return;
 
         const params = new URLSearchParams(window.location.search);
         const fromId = params.get('from');
-
         if (fromId) {
             db.ref(`users/${fromId}/profilePicture`).once('value').then(snap => {
                 setQuickShareUserId(fromId);
@@ -150,8 +122,8 @@ function SocialNetwork({ user, onClose }) {
                                 localStorage.setItem('location_saved', 'true');
                             }
                         }
-                    } catch(e) { console.log("Erro localização:", e); }
-                }, () => console.log("Localização negada."));
+                    } catch(e) {}
+                }, () => {});
             }
         };
         requestLocation();
@@ -166,30 +138,23 @@ function SocialNetwork({ user, onClose }) {
                         .filter(p => Date.now() - p.timestamp < 24 * 60 * 60 * 1000);
                     setStories(list);
                 }
-            } catch (e) { console.warn("Erro stories:", e); }
+            } catch (e) {}
         };
         fetchStories();
 
         const fetchUserData = async (uid) => {
-            if (!uid) return { name: 'Usuário', avatar: 'assets/default-avatar.svg', username: 'usuario' };
+            if (!uid) return { name: 'Usuário', avatar: 'assets/default-avatar.svg' };
             if (window._userCache && window._userCache[uid]) return window._userCache[uid];
             try {
                 const photoSnap = await db.ref(`users/${uid}/profilePicture`).once('value').catch(() => null);
                 const profilePicture = photoSnap ? photoSnap.val() : null;
                 const userSnap = await db.ref(`users/${uid}`).once('value').catch(() => null);
                 const uData = userSnap && userSnap.exists() ? userSnap.val() : {};
-                const result = {
-                    name: uData.name || 'Usuário',
-                    avatar: profilePicture || 'assets/default-avatar.svg',
-                    username: uData.username || (uData.name || 'usuario').toLowerCase().replace(/\s/g, ''),
-                    isVerified: !!uData.isVerified
-                };
+                const result = { name: uData.name || 'Usuário', avatar: profilePicture || 'assets/default-avatar.svg', isVerified: !!uData.isVerified };
                 if (!window._userCache) window._userCache = {};
                 window._userCache[uid] = result;
                 return result;
-            } catch(e) {
-                return { name: 'Usuário', avatar: 'assets/default-avatar.svg', username: 'usuario' };
-            }
+            } catch(e) { return { name: 'Usuário', avatar: 'assets/default-avatar.svg' }; }
         };
 
         const processPostsWithUsers = async (data) => {
@@ -231,10 +196,8 @@ function SocialNetwork({ user, onClose }) {
                     if (keys.length < 30) setHasMorePosts(false);
                     const postsList = await processPostsWithUsers(data);
                     setPosts(postsList.reverse());
-                } else {
-                    setPosts([]); setHasMorePosts(false);
-                }
-            } catch (e) { console.warn("Erro posts:", e); setPosts([]); setHasMorePosts(false); }
+                } else { setPosts([]); setHasMorePosts(false); }
+            } catch (e) { setPosts([]); setHasMorePosts(false); }
         };
         loadInitialPosts();
 
@@ -242,7 +205,7 @@ function SocialNetwork({ user, onClose }) {
         const followsListener = followsRef.on('value', (snap) => {
             setFollowing(snap.val() || {});
         }, (error) => {
-            console.warn("⚠️ Sem permissão /follows:", error.message);
+            console.warn("Sem permissão /follows:", error.message);
             setFollowing({});
         });
 
@@ -252,12 +215,10 @@ function SocialNetwork({ user, onClose }) {
                 if (snap && snap.exists()) {
                     const allFollows = snap.val();
                     let count = 0;
-                    for (const fid in allFollows) {
-                        if (allFollows[fid][user.id]) count++;
-                    }
+                    for (const fid in allFollows) if (allFollows[fid][user.id]) count++;
                     setFollowerStats({ count, lastUpdated: Date.now() });
                 }
-            } catch (e) { console.warn("Erro seguidores:", e); }
+            } catch (e) {}
         };
         calculateFollowers();
 
@@ -271,16 +232,14 @@ function SocialNetwork({ user, onClose }) {
         const db = window.firebaseDB;
         if (!db) return;
         setPosts(prev => prev.map(p => {
-            if (p.id === postId) {
-                return { ...p, hasLiked: !hasLiked, likesCount: !hasLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1) };
-            }
+            if (p.id === postId) return { ...p, hasLiked: !hasLiked, likesCount: !hasLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1) };
             return p;
         }));
         try {
             const likeRef = db.ref(`posts/${postId}/likes/${user.id}`);
             if (hasLiked) await likeRef.remove();
             else await likeRef.set(true);
-        } catch (e) { console.error("Erro like:", e); }
+        } catch (e) {}
     };
 
     const handleAddComment = async (postId) => {
@@ -303,7 +262,7 @@ function SocialNetwork({ user, onClose }) {
 
     const handleCameraCapture = async (file, type, audio, text) => {
         setIsUploading(true);
-        setUploadStatus('Processando mídia...');
+        setUploadStatus('Processando...');
         try {
             const uid = user?.id || user?.uid || user?.privateId;
             await window.api.uploadToCDN(file, uid, 'midia', {
@@ -312,10 +271,9 @@ function SocialNetwork({ user, onClose }) {
                 type: type === 'video' ? 'video' : (type === 'text' ? 'text' : (type === 'poll' ? 'poll' : 'image')),
                 textContent: text || ''
             });
-            showToast("Publicado com sucesso!");
+            showToast("Publicado!");
             setTimeout(() => { setShowCamera(false); setIsUploading(false); }, 1500);
         } catch (err) {
-            console.error("Erro:", err);
             showToast("Erro: " + err.message);
             setIsUploading(false);
         }
@@ -341,7 +299,7 @@ function SocialNetwork({ user, onClose }) {
                 setPosts(prev => [...prev, ...newPostsList.reverse()]);
                 if (keys.length < 30) setHasMorePosts(false);
             } else setHasMorePosts(false);
-        } catch (e) { console.error(e); }
+        } catch (e) {}
         finally { setIsLoadingMore(false); }
     };
 
@@ -356,12 +314,12 @@ function SocialNetwork({ user, onClose }) {
         try {
             if (following[targetId]) {
                 await db.ref(`follows/${user.id}/${targetId}`).remove();
-                showToast("Você deixou de seguir.");
+                showToast("Deixou de seguir.");
             } else {
                 await db.ref(`follows/${user.id}/${targetId}`).set(true);
                 showToast("Seguindo!");
             }
-        } catch (e) { showToast("Erro ao seguir."); }
+        } catch (e) { showToast("Erro."); }
     };
 
     const getYoutubeId = (url) => {
@@ -385,9 +343,6 @@ function SocialNetwork({ user, onClose }) {
             if (word.startsWith('#') && word.length > 1) {
                 return <span key={i} className="text-purple-400 font-bold cursor-pointer hover:underline" onClick={() => { setSearchQuery(word); setFilterType('all'); }}>{word}</span>;
             }
-            if (word.startsWith('@') && word.length > 1) {
-                return <span key={i} className="text-pink-400 font-bold cursor-pointer hover:underline">{word}</span>;
-            }
             if (word.match(/^https?:\/\/[^\s]+$/i)) {
                 return <a key={i} href={word} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-blue-400 font-bold hover:underline break-all">{word}</a>;
             }
@@ -398,15 +353,14 @@ function SocialNetwork({ user, onClose }) {
     const allItems = [...posts].sort((a, b) => b.timestamp - a.timestamp);
     const filteredPosts = allItems.filter(post => {
         const s = searchQuery.toLowerCase();
-        const matchesSearch = post.content?.toLowerCase().includes(s) || post.authorName?.toLowerCase().includes(s) || (post.hashtags && post.hashtags.some(h => h.toLowerCase().includes(s)));
+        const matchesSearch = post.content?.toLowerCase().includes(s) || post.authorName?.toLowerCase().includes(s);
         const matchesType = filterType === 'all' || post.type === filterType;
         return matchesSearch && matchesType;
     });
 
-    // ⬇️ videoPosts: usa isVideoUrl (não confia no type)
     const videoPosts = filteredPosts.filter(p => {
-        const url = extractUrl(p.mediaUrl) || (p.mediaUrls && extractUrl(p.mediaUrls[0]));
-        return isVideoUrl(url);
+        const raw = extractUrl(p.mediaUrl) || (p.mediaUrls && extractUrl(p.mediaUrls[0]));
+        return isVideoUrl(raw);
     });
 
     const isDark = theme === 'dark';
@@ -415,7 +369,7 @@ function SocialNetwork({ user, onClose }) {
     const headerBg = 'bg-secondary/80 backdrop-blur-lg border-b border-border';
 
     // ==========================================================
-    // PLAYER PERSONALIZADO DE VÍDEO (inline no feed)
+    // PLAYER PERSONALIZADO INLINE
     // ==========================================================
     const InlineVideoPlayer = ({ post }) => {
         const videoRef = React.useRef(null);
@@ -423,15 +377,33 @@ function SocialNetwork({ user, onClose }) {
         const [isMuted, setIsMuted] = React.useState(true);
         const [progress, setProgress] = React.useState(0);
         const [showOverlay, setShowOverlay] = React.useState(true);
+        const [authedUrl, setAuthedUrl] = React.useState('');
+        const [hasError, setHasError] = React.useState(false);
 
-        const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
-        const authedUrl = cdnUrl(rawUrl);
+        React.useEffect(() => {
+            let cancelled = false;
+            const load = async () => {
+                const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
+                if (!rawUrl) return;
+                let finalUrl = rawUrl;
+                try {
+                    if (window.api && typeof window.api.getAuthedUrl === 'function') {
+                        finalUrl = await window.api.getAuthedUrl(rawUrl);
+                    } else {
+                        finalUrl = cdnUrl(rawUrl);
+                    }
+                } catch (e) { finalUrl = cdnUrl(rawUrl); }
+                if (!cancelled) setAuthedUrl(finalUrl);
+            };
+            load();
+            return () => { cancelled = true; };
+        }, [post.id]);
 
         const togglePlay = (e) => {
             e.stopPropagation();
             const vid = videoRef.current;
             if (!vid) return;
-            if (vid.paused) { vid.play(); setIsPlaying(true); setShowOverlay(false); }
+            if (vid.paused) { vid.play().catch(()=>{}); setIsPlaying(true); setShowOverlay(false); }
             else { vid.pause(); setIsPlaying(false); setShowOverlay(true); }
         };
 
@@ -445,13 +417,12 @@ function SocialNetwork({ user, onClose }) {
 
         const handleTimeUpdate = () => {
             const vid = videoRef.current;
-            if (!vid) return;
-            if (vid.duration) setProgress((vid.currentTime / vid.duration) * 100);
+            if (!vid || !vid.duration) return;
+            setProgress((vid.currentTime / vid.duration) * 100);
         };
 
         const handleOpenFeed = (e) => {
             e.stopPropagation();
-            // ⬇️ ABRE O VIDEOFEED COM ROLAGEM
             const idx = videoPosts.findIndex(vp => vp.id === post.id);
             const list = videoPosts.map(v => {
                 const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
@@ -461,8 +432,25 @@ function SocialNetwork({ user, onClose }) {
             setActiveVideoFeed(idx !== -1 ? idx : 0);
         };
 
+        if (!authedUrl) {
+            return (
+                <div className="w-full bg-black flex items-center justify-center h-64">
+                    <div className="icon-loader animate-spin text-white text-3xl"></div>
+                </div>
+            );
+        }
+
+        if (hasError) {
+            return (
+                <div className="w-full bg-black flex items-center justify-center h-64 flex-col gap-2">
+                    <div className="icon-alert-circle text-red-400 text-4xl"></div>
+                    <span className="text-white/60 text-sm">Erro ao carregar vídeo</span>
+                </div>
+            );
+        }
+
         return (
-            <div className="relative w-full bg-black cursor-pointer" onClick={handleOpenFeed}>
+            <div className="relative w-full bg-black" onClick={handleOpenFeed}>
                 <video
                     ref={videoRef}
                     src={authedUrl}
@@ -474,42 +462,24 @@ function SocialNetwork({ user, onClose }) {
                     onTimeUpdate={handleTimeUpdate}
                     onPlay={() => { setIsPlaying(true); setShowOverlay(false); }}
                     onPause={() => { setIsPlaying(false); setShowOverlay(true); }}
+                    onError={() => setHasError(true)}
                 />
-
-                {/* Overlay de play */}
-                {showOverlay && (
+                {showOverlay && !hasError && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20">
                             <div className="icon-play text-white text-4xl ml-1"></div>
                         </div>
                     </div>
                 )}
-
-                {/* Barra de progresso */}
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
                     <div className="h-full bg-white transition-all" style={{ width: `${progress}%` }}></div>
                 </div>
-
-                {/* Botões flutuantes */}
                 <div className="absolute bottom-3 right-3 flex gap-2">
-                    <button
-                        onClick={togglePlay}
-                        className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20 active:scale-90"
-                    >
+                    <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20">
                         <div className={`text-white text-xl ${isPlaying ? 'icon-pause' : 'icon-play'}`}></div>
                     </button>
-                    <button
-                        onClick={toggleMute}
-                        className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20 active:scale-90"
-                    >
+                    <button onClick={toggleMute} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20">
                         <div className={`text-white text-xl ${isMuted ? 'icon-volume-x' : 'icon-volume-2'}`}></div>
-                    </button>
-                    <button
-                        onClick={handleOpenFeed}
-                        className="w-10 h-10 rounded-full bg-purple-600/80 backdrop-blur-md flex items-center justify-center border border-white/20 active:scale-90"
-                        title="Abrir no feed"
-                    >
-                        <div className="icon-maximize-2 text-white text-lg"></div>
                     </button>
                 </div>
             </div>
@@ -531,7 +501,6 @@ function SocialNetwork({ user, onClose }) {
                     <img 
                         src={user.avatar || 'assets/default-avatar.svg'}
                         onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
-                        alt="Avatar" 
                         className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer"
                         onClick={() => window.location.href = `canal.html?uid=${user.id}`}
                     />
@@ -540,24 +509,22 @@ function SocialNetwork({ user, onClose }) {
                         <span className="text-yellow-500 font-bold text-xs">{followerStats.count} {followerStats.count === 1 ? 'seguidor' : 'seguidores'}</span>
                     </div>
                 </div>
-
                 <div className="flex items-center gap-1 sm:gap-2">
-                    <button onClick={() => { if (window.requestUserLocation) window.requestUserLocation(); window.location.href = 'discover.html'; }} className="p-2 rounded-full text-text-secondary hover:bg-tertiary" title="Descobrir">
+                    <button onClick={() => { if (window.requestUserLocation) window.requestUserLocation(); window.location.href = 'discover.html'; }} className="p-2 rounded-full text-text-secondary hover:bg-tertiary">
                         <div className="icon-users text-xl"></div>
                     </button>
-                    <button onClick={() => window.location.href = 'search.html'} className="p-2 hidden sm:block rounded-full text-text-secondary hover:bg-tertiary" title="Pesquisar">
+                    <button onClick={() => window.location.href = 'search.html'} className="p-2 hidden sm:block rounded-full text-text-secondary hover:bg-tertiary">
                         <div className="icon-search text-xl"></div>
                     </button>
-                    <button onClick={() => setShowSettings(true)} className="p-2 rounded-full text-text-secondary hover:bg-tertiary" title="Config">
+                    <button onClick={() => setShowSettings(true)} className="p-2 rounded-full text-text-secondary hover:bg-tertiary">
                         <div className="icon-settings text-xl"></div>
                     </button>
-                    <button onClick={onClose} className="p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-danger" title="Sair">
+                    <button onClick={onClose} className="p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-danger">
                         <div className="icon-log-out text-xl"></div>
                     </button>
                 </div>
             </header>
 
-            {/* Mobile Nav */}
             <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center justify-between w-[90%] max-w-[400px] shadow-lg">
                 <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary'}`}>
                     <div className="icon-house text-2xl"></div>
@@ -585,7 +552,6 @@ function SocialNetwork({ user, onClose }) {
                 </button>
             </div>
 
-            {/* Desktop Sidebar */}
             <div className="hidden md:flex flex-col fixed right-0 top-[60px] bottom-0 w-20 bg-secondary/90 backdrop-blur-lg border-l border-border z-[40] py-6 items-center gap-6 shadow-lg">
                 <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`p-3 rounded-xl ${desktopView === 'feed' ? 'bg-accent/20 text-accent' : 'text-text-secondary'}`}>
                     <div className="icon-house text-2xl"></div>
@@ -593,7 +559,7 @@ function SocialNetwork({ user, onClose }) {
                 <button onClick={() => setDesktopView('chat')} className={`p-3 rounded-xl ${desktopView === 'chat' ? 'bg-accent/20 text-accent' : 'text-text-secondary'}`}>
                     <div className="icon-message-circle text-2xl"></div>
                 </button>
-                <button onClick={() => window.location.href = 'upload.html'} className="w-12 h-12 rounded-xl bg-blue-500 text-white flex items-center justify-center" title="Novo Post">
+                <button onClick={() => window.location.href = 'upload.html'} className="w-12 h-12 rounded-xl bg-blue-500 text-white flex items-center justify-center">
                     <div className="icon-plus text-2xl font-bold"></div>
                 </button>
                 <button onClick={() => {
@@ -606,13 +572,13 @@ function SocialNetwork({ user, onClose }) {
                         setInfiniteFeed(list);
                         setActiveVideoFeed(0);
                     } else showToast("Nenhum vídeo.");
-                }} className="p-3 rounded-xl text-text-secondary" title="Vídeos">
+                }} className="p-3 rounded-xl text-text-secondary">
                     <div className="icon-circle-play text-2xl"></div>
                 </button>
-                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="p-3 rounded-xl text-text-secondary" title="Meu Canal">
+                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="p-3 rounded-xl text-text-secondary">
                     <div className="icon-user text-2xl"></div>
                 </button>
-                <button onClick={() => setShowSettings(true)} className="p-3 rounded-xl text-text-secondary" title="Config">
+                <button onClick={() => setShowSettings(true)} className="p-3 rounded-xl text-text-secondary">
                     <div className="icon-settings text-2xl"></div>
                 </button>
             </div>
@@ -621,7 +587,6 @@ function SocialNetwork({ user, onClose }) {
                 <window.SettingsMenu isOpen={true} onClose={() => setShowSettings(false)} />
             )}
 
-            {/* Stories */}
             {stories.length > 0 && (
                 <div className="w-full max-w-2xl mx-auto p-4 pt-4 pb-0">
                     <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
@@ -637,7 +602,6 @@ function SocialNetwork({ user, onClose }) {
                 </div>
             )}
 
-            {/* Story Viewer */}
             {activeStory !== null && stories[activeStory] && (
                 <div className="fixed inset-0 z-[150] bg-black flex flex-col">
                     <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
@@ -661,7 +625,6 @@ function SocialNetwork({ user, onClose }) {
                 </div>
             )}
 
-            {/* Feed */}
             <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 max-w-full md:max-w-4xl mx-auto w-full space-y-6" onScroll={desktopView === 'feed' ? handleScroll : undefined}>
                 {desktopView === 'chat' ? (
                     <div className="bg-secondary rounded-2xl border border-border h-[80vh] overflow-hidden shadow-lg mt-4">
@@ -670,7 +633,7 @@ function SocialNetwork({ user, onClose }) {
                 ) : (
                     <>
                         <div className={`p-4 ${cardBg} mb-6 max-w-2xl mx-auto`}>
-                            <button onClick={() => window.location.href = 'upload.html'} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary hover:border-border-active">
+                            <button onClick={() => window.location.href = 'upload.html'} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary">
                                 <div className="icon-plus text-accent text-lg"></div>
                                 <span className="font-semibold text-text-primary">Criar nova publicação...</span>
                             </button>
@@ -684,7 +647,6 @@ function SocialNetwork({ user, onClose }) {
                         ) : (
                             filteredPosts.map(post => (
                                 <div key={post.id} id={`post-${post.id}`} className={cardBg}>
-                                    {/* Header */}
                                     <div className="p-4 flex justify-between items-start">
                                         <div className="flex items-center gap-3">
                                             <img 
@@ -709,7 +671,6 @@ function SocialNetwork({ user, onClose }) {
                                         </div>
                                     </div>
 
-                                    {/* Título / Conteúdo */}
                                     {post.title && <div className="px-4 pt-2 pb-1 font-bold text-lg break-words text-primary">{post.title}</div>}
                                     {(post.content || post.textContent) && (
                                         <div className="px-4 pb-3 whitespace-pre-wrap text-[15px] break-words text-indigo-50 font-medium leading-relaxed">
@@ -717,9 +678,7 @@ function SocialNetwork({ user, onClose }) {
                                         </div>
                                     )}
 
-                                    {/* MÍDIA */}
                                     {(() => {
-                                        // ENQUETE
                                         if (post.type === 'poll') {
                                             if (window.PollViewer) {
                                                 return <window.PollViewer key={`poll-${post.id}`} post={post} user={user} />;
@@ -729,16 +688,13 @@ function SocialNetwork({ user, onClose }) {
                                                     <div className="font-bold text-lg mb-3 text-primary">{post.question || 'Enquete'}</div>
                                                     <div className="space-y-2">
                                                         {(post.options || []).map((opt, idx) => (
-                                                            <div key={idx} className="p-3 rounded-lg bg-secondary border border-border text-text-primary">
-                                                                {opt.text || opt}
-                                                            </div>
+                                                            <div key={idx} className="p-3 rounded-lg bg-secondary border border-border text-text-primary">{opt.text || opt}</div>
                                                         ))}
                                                     </div>
                                                 </div>
                                             );
                                         }
 
-                                        // CARROSSEL
                                         if (post.type === 'carousel' && post.mediaUrls && post.mediaUrls.length > 0) {
                                             return (
                                                 <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
@@ -759,12 +715,10 @@ function SocialNetwork({ user, onClose }) {
                                             );
                                         }
 
-                                        // URL ÚNICA
                                         const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
                                         if (!rawUrl) return null;
                                         const url = cdnUrl(rawUrl);
 
-                                        // YOUTUBE
                                         const ytId = getYoutubeId(rawUrl);
                                         if (ytId) {
                                             return (
@@ -774,12 +728,10 @@ function SocialNetwork({ user, onClose }) {
                                             );
                                         }
 
-                                        // VÍDEO (player personalizado)
                                         if (isVideoUrl(rawUrl)) {
                                             return <InlineVideoPlayer post={post} />;
                                         }
 
-                                        // IMAGEM
                                         return (
                                             <img 
                                                 src={url} 
@@ -791,7 +743,6 @@ function SocialNetwork({ user, onClose }) {
                                         );
                                     })()}
 
-                                    {/* Ações */}
                                     <div className={`px-4 py-3 border-t flex items-center justify-between border-border ${textMuted}`}>
                                         <div className="flex items-center gap-6">
                                             <button onClick={() => handleLike(post.id, post.hasLiked)} className={`flex items-center gap-2 ${post.hasLiked ? 'text-danger' : 'hover:text-danger'}`}>
@@ -808,7 +759,6 @@ function SocialNetwork({ user, onClose }) {
                                         </button>
                                     </div>
 
-                                    {/* Comentários */}
                                     {activeCommentPost === post.id && (
                                         <div className="p-4 border-t bg-tertiary/30 border-border">
                                             <div className="flex gap-2 mb-4">
@@ -846,7 +796,6 @@ function SocialNetwork({ user, onClose }) {
                 )}
             </div>
 
-            {/* VideoFeed fullscreen */}
             {activeVideoFeed !== null && window.VideoFeed && (
                 <window.VideoFeed
                     initialVideos={infiniteFeed}
@@ -860,14 +809,13 @@ function SocialNetwork({ user, onClose }) {
                     quickShareUserId={quickShareUserId}
                     quickShareUserAvatar={quickShareUserAvatar}
                     handleQuickShare={async () => showToast("Indisponível")}
-                    isQuickSharing={isQuickSharing}
-                    quickShareSuccess={quickShareSuccess}
+                    isQuickSharing={false}
+                    quickShareSuccess={false}
                     renderTextWithHashtags={renderTextWithHashtags}
                     getRelativeTime={getRelativeTime}
                 />
             )}
 
-            {/* Share Modal */}
             {showShareModal && postToShare && (
                 <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4">
                     <div className={`${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-sm rounded-2xl shadow-xl overflow-hidden`}>
