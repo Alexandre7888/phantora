@@ -15,9 +15,9 @@ function SocialNetwork({ user, onClose }) {
     const [activeCommentPost, setActiveCommentPost] = React.useState(null);
     const [commentText, setCommentText] = React.useState('');
 
-    // Novas funcionalidades
-    const [activeVideoFeed, setActiveVideoFeed] = React.useState(null); // null or starting index
-    const [infiniteFeed, setInfiniteFeed] = React.useState([]); // array of videos for infinite scroll
+    // Funcionalidades
+    const [activeVideoFeed, setActiveVideoFeed] = React.useState(null);
+    const [infiniteFeed, setInfiniteFeed] = React.useState([]);
     const [searchQuery, setSearchQuery] = React.useState('');
     const [showShareModal, setShowShareModal] = React.useState(false);
     const [postToShare, setPostToShare] = React.useState(null);
@@ -41,7 +41,7 @@ function SocialNetwork({ user, onClose }) {
     const [pendingLink, setPendingLink] = React.useState(null);
     const watchTimers = React.useRef({});
     const viewStartTime = React.useRef(null);
-    const likeSoundRef = React.useRef(null); // Som de like desativado temporariamente devido ao link quebrado
+    const likeSoundRef = React.useRef(null);
 
     // Upload states
     const [isUploading, setIsUploading] = React.useState(false);
@@ -55,7 +55,7 @@ function SocialNetwork({ user, onClose }) {
     const [showPostCreator, setShowPostCreator] = React.useState(false);
     const [desktopView, setDesktopView] = React.useState('feed');
 
-    // Chat Component
+    // Chat
     const [showChatComponent, setShowChatComponent] = React.useState(false);
 
     // Profile Modal
@@ -83,7 +83,6 @@ function SocialNetwork({ user, onClose }) {
         const db = window.firebaseDB;
         if (!db) return;
 
-        // Parse URL params for direct video opening and quick share
         const params = new URLSearchParams(window.location.search);
         const videoId = params.get('v');
         const fromId = params.get('from');
@@ -91,17 +90,15 @@ function SocialNetwork({ user, onClose }) {
         if (fromId) {
             db.ref(`users/${fromId}/profilePicture`).once('value').then(snap => {
                 const profilePicture = snap.val();
-                if (profilePicture) {
-                    setQuickShareUserId(fromId);
-                    setQuickShareUserAvatar(profilePicture);
-                } else {
-                    setQuickShareUserId(fromId);
-                    setQuickShareUserAvatar(null);
-                }
+                setQuickShareUserId(fromId);
+                setQuickShareUserAvatar(profilePicture || null);
+            }).catch(err => {
+                console.warn("Erro ao buscar profilePicture:", err);
+                setQuickShareUserId(fromId);
+                setQuickShareUserAvatar(null);
             });
         }
 
-        // Carregar stories (últimas 24h)
         const requestLocation = () => {
             if (navigator.geolocation && !localStorage.getItem('location_saved')) {
                 navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -127,38 +124,43 @@ function SocialNetwork({ user, onClose }) {
             }
         };
 
-        // Pedir localização automaticamente no login
         requestLocation();
 
-        // Expõe a função globalmente para ser chamada pelo botão se necessário
         window.requestUserLocation = () => {
-            localStorage.removeItem('location_saved'); // Força a pedir de novo se clicar
+            localStorage.removeItem('location_saved');
             requestLocation();
         };
 
         const fetchStories = async () => {
-            const storiesSnap = await db.ref('posts').orderByChild('type').equalTo('story').once('value');
-            if (storiesSnap.exists()) {
-                const data = storiesSnap.val();
-                const storyPosts = Object.keys(data).map(key => ({ id: key, ...data[key] }))
-                    .filter(p => Date.now() - p.timestamp < 24 * 60 * 60 * 1000);
-                setStories(storyPosts);
+            try {
+                const storiesSnap = await db.ref('posts').orderByChild('type').equalTo('story').once('value');
+                if (storiesSnap.exists()) {
+                    const data = storiesSnap.val();
+                    const storyPosts = Object.keys(data).map(key => ({ id: key, ...data[key] }))
+                        .filter(p => Date.now() - p.timestamp < 24 * 60 * 60 * 1000);
+                    setStories(storyPosts);
+                }
+            } catch (e) {
+                console.warn("Erro ao carregar stories:", e);
             }
         };
         fetchStories();
 
+        // ==========================================================
+        // FETCH USER DATA — SEMPRE USA users/{UID}/profilePicture
+        // ==========================================================
         const fetchUserData = async (uid) => {
             if (!uid) return { name: 'Usuário', avatar: 'assets/default-avatar.svg', username: 'usuario' };
             if (window._userCache && window._userCache[uid]) return window._userCache[uid];
 
             try {
-                // 1. Buscar SOMENTE a foto de perfil no caminho específico
-                const photoSnap = await db.ref(`users/${uid}/profilePicture`).once('value');
-                const profilePicture = photoSnap.val();
+                // 1. Busca SOMENTE a foto de perfil no caminho específico
+                const photoSnap = await db.ref(`users/${uid}/profilePicture`).once('value').catch(() => null);
+                const profilePicture = photoSnap ? photoSnap.val() : null;
 
-                // 2. Buscar dados adicionais (nome, username, verificação) mas NUNCA a foto
-                const userSnap = await db.ref(`users/${uid}`).once('value');
-                const uData = userSnap.val() || {};
+                // 2. Busca dados adicionais (nome, username, verificação) mas NUNCA a foto
+                const userSnap = await db.ref(`users/${uid}`).once('value').catch(() => null);
+                const uData = userSnap && userSnap.exists() ? userSnap.val() : {};
 
                 const result = {
                     name: uData.name || 'Usuário',
@@ -171,6 +173,7 @@ function SocialNetwork({ user, onClose }) {
                 window._userCache[uid] = result;
                 return result;
             } catch(e) {
+                console.warn("Erro em fetchUserData:", e);
                 return { name: 'Usuário', avatar: 'assets/default-avatar.svg', username: 'usuario' };
             }
         };
@@ -184,7 +187,6 @@ function SocialNetwork({ user, onClose }) {
 
                 const uData = await fetchUserData(p.authorId);
 
-                // Process comments
                 let processedComments = {};
                 if (p.comments) {
                     for (const cId of Object.keys(p.comments)) {
@@ -215,44 +217,58 @@ function SocialNetwork({ user, onClose }) {
             return postsList;
         };
 
-        // Primeira carga de posts (30 itens)
         const loadInitialPosts = async () => {
-            const snap = await db.ref('posts').orderByKey().limitToLast(30).once('value');
-            if (snap.exists()) {
-                const data = snap.val();
-                const keys = Object.keys(data);
-                const firstKey = keys[0];
+            try {
+                const snap = await db.ref('posts').orderByKey().limitToLast(30).once('value');
+                if (snap.exists()) {
+                    const data = snap.val();
+                    const keys = Object.keys(data);
+                    const firstKey = keys[0];
 
-                const postsList = await processPostsWithUsers(data);
+                    const postsList = await processPostsWithUsers(data);
 
-                if (keys.length < 30) setHasMorePosts(false);
-                setLastPostKey(firstKey);
+                    if (keys.length < 30) setHasMorePosts(false);
+                    setLastPostKey(firstKey);
 
-                if (window.sortFeedByAlgorithm) {
-                    const sorted = await window.sortFeedByAlgorithm(user.id, postsList);
-                    setPosts(sorted);
+                    if (window.sortFeedByAlgorithm) {
+                        const sorted = await window.sortFeedByAlgorithm(user.id, postsList);
+                        setPosts(sorted);
+                    } else {
+                        setPosts(postsList.reverse());
+                    }
                 } else {
-                    setPosts(postsList.reverse());
+                    setPosts([]);
+                    setHasMorePosts(false);
                 }
-            } else {
+            } catch (e) {
+                console.warn("Erro ao carregar posts:", e);
                 setPosts([]);
                 setHasMorePosts(false);
             }
         };
         loadInitialPosts();
 
+        // ==========================================================
+        // FOLLOWS — COM TRATAMENTO DE ERRO DE PERMISSÃO
+        // ==========================================================
         const followsRef = db.ref(`follows/${user.id}`);
         const followsListener = followsRef.on('value', (snap) => {
             setFollowing(snap.val() || {});
+        }, (error) => {
+            console.warn("⚠️ Sem permissão para ler /follows:", error.message);
+            setFollowing({});
         });
 
-        // Count followers by listening to all follows (or an index if it existed, but here we query follows)
-        // Since follows can be large, a better approach is to just query follows once or listen to a specific followers node if it's maintained.
-        // For now, we will just fetch the followers count by reading the follows node where target is user.id
+        // ==========================================================
+        // CALCULAR SEGUIDORES — COM TRATAMENTO DE ERRO
+        // ==========================================================
         const calculateFollowers = async () => {
             try {
-                const snap = await db.ref('follows').once('value');
-                if (snap.exists()) {
+                const snap = await db.ref('follows').once('value').catch((err) => {
+                    console.warn("⚠️ Sem permissão para ler /follows:", err.message);
+                    return null;
+                });
+                if (snap && snap.exists()) {
                     const allFollows = snap.val();
                     let count = 0;
                     for (const followerId in allFollows) {
@@ -261,16 +277,13 @@ function SocialNetwork({ user, onClose }) {
                     setFollowerStats({ count, lastUpdated: Date.now() });
                 }
             } catch (e) {
-                console.error(e);
+                console.warn("Erro ao calcular seguidores:", e);
             }
         };
         calculateFollowers();
 
-        // Fetch Suggestions
         const fetchSuggestions = async () => {
             try {
-                // Ao invés de consultar a raiz /users que está bloqueada por permissão,
-                // vamos pegar as sugestões pela mesma lógica do FriendSwipe (mesma cidade)
                 const currentUserSnap = await db.ref(`users/${user.id}`).once('value').catch(() => null);
                 const currentUserData = currentUserSnap && currentUserSnap.exists() ? currentUserSnap.val() : {};
                 const city = currentUserData.city || user.city;
@@ -293,7 +306,8 @@ function SocialNetwork({ user, onClose }) {
                 }
                 setFriendSuggestions([]);
             } catch (err) {
-                console.warn("Erro ao carregar sugestões de amigos:", err);
+                console.warn("Erro ao carregar sugestões:", err);
+                setFriendSuggestions([]);
             }
         };
         fetchSuggestions();
@@ -303,7 +317,9 @@ function SocialNetwork({ user, onClose }) {
         };
     }, [user.id]);
 
-    // Função para carregar mais posts no feed principal (30 itens)
+    // ==========================================================
+    // CARREGAR MAIS POSTS
+    // ==========================================================
     const loadMorePosts = async () => {
         if (!hasMorePosts || isLoadingMore || !lastPostKey) return;
         setIsLoadingMore(true);
@@ -350,32 +366,29 @@ function SocialNetwork({ user, onClose }) {
         }
     };
 
-    // Scroll listener para o feed principal
     const handleScroll = (e) => {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
-        if (scrollHeight - scrollTop <= clientHeight + 300) { // 300px antes do final
+        if (scrollHeight - scrollTop <= clientHeight + 300) {
             loadMorePosts();
         }
     };
 
-    // Handle opening direct video from URL once posts are loaded
+    // Handle opening direct video from URL
     React.useEffect(() => {
         if (posts.length > 0 && activeVideoFeed === null) {
             const params = new URLSearchParams(window.location.search);
             const videoId = params.get('v');
             if (videoId) {
-                const vPosts = posts.filter(p => p.type === 'video' || (p.mediaUrl && (p.mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i) || p.mediaUrl.includes('file-'))));
+                const vPosts = posts.filter(p => p.type === 'video' || (p.mediaUrl && (typeof p.mediaUrl === 'string' && (p.mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i) || p.mediaUrl.includes('file-')))));
                 const idx = vPosts.findIndex(p => p.id === videoId);
                 if (idx !== -1) {
                     setInfiniteFeed([...vPosts]);
                     setActiveVideoFeed(idx);
                 } else {
-                    // If not found in video posts, filter all posts to find it
                     const post = posts.find(p => p.id === videoId);
                     if (post) {
                         setSearchQuery('');
                         setFilterType('all');
-                        // Optional: Scroll to post logic could go here
                         setTimeout(() => {
                             const postElement = document.getElementById(`post-${videoId}`);
                             if (postElement) postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -385,167 +398,6 @@ function SocialNetwork({ user, onClose }) {
             }
         }
     }, [posts, activeVideoFeed]);
-
-    // Handle Video Feed scroll logic
-    const videoContainerRef = React.useRef(null);
-    const videoPostsRef = React.useRef([]);
-
-    React.useEffect(() => {
-        if (activeVideoFeed !== null && videoContainerRef.current) {
-            let observer = null;
-
-            const initTimer = setTimeout(() => {
-                const container = videoContainerRef.current;
-                if (!container) return;
-
-                const videoEl = container.children[activeVideoFeed];
-                if (videoEl) {
-                    container.scrollTo({ top: videoEl.offsetTop, behavior: 'instant' });
-                }
-
-                observer = new IntersectionObserver((entries) => {
-                    entries.forEach(entry => {
-                        const idx = Number(entry.target.dataset.index);
-                        const video = entry.target.querySelector('video');
-
-                        if (entry.isIntersecting) {
-                            setActiveVideoFeed(idx);
-                            if (video && video.paused) {
-                                video.play().catch(e => {
-                                    console.warn("Autoplay bloqueado pelo navegador:", e);
-                                    const container = video.closest('[data-index]');
-                                    if (container) {
-                                        const overlay = container.querySelector('.play-icon-overlay');
-                                        if (overlay) overlay.style.opacity = '1';
-                                    }
-                                });
-                            }
-
-                            // Análises: Registrar tempo do vídeo anterior
-                            if (activeVideoFeed !== null && activeVideoFeed !== idx) {
-                                const prevVideo = infiniteFeed[activeVideoFeed];
-                                if (prevVideo && viewStartTime.current) {
-                                    const timeSpent = Date.now() - viewStartTime.current;
-                                    // Reportar view
-                                    const db = window.firebaseDB;
-                                    if (db && timeSpent > 1000) { // pelo menos 1 segundo
-                                        try {
-                                            db.ref(`video_analytics/${prevVideo.authorId}/${prevVideo.id}`).push({
-                                                watchTimeMs: timeSpent,
-                                                timestamp: Date.now(),
-                                                viewerId: 'anonymous' // Anônimo como pedido
-                                            }).catch(err => console.warn('Erro ao salvar analytics:', err.message));
-                                        } catch(e) {
-                                            console.warn('Erro ao tentar salvar analytics:', e);
-                                        }
-                                    }
-                                }
-                            }
-
-                            viewStartTime.current = Date.now();
-
-                            // Infinite scroll logic para vídeos: carrega mais 10
-                            if (idx >= infiniteFeed.length - 2 && !isLoadingMoreVideos && hasMoreVideos) {
-                                setIsLoadingMoreVideos(true);
-
-                                // Buscar mais 10 vídeos no firebase se não tivermos em cache
-                                const loadMoreVids = async () => {
-                                    try {
-                                        const db = window.firebaseDB;
-                                        let query = db.ref('posts').orderByKey();
-                                        if (lastVideoKey) {
-                                            query = query.endBefore(lastVideoKey);
-                                        }
-                                        const snap = await query.limitToLast(30).once('value'); // busca mais pois precisamos filtrar por vídeo
-
-                                        if (snap.exists()) {
-                                            const data = snap.val();
-                                            const keys = Object.keys(data);
-                                            if (keys.length === 0) {
-                                                setHasMoreVideos(false);
-                                                return;
-                                            }
-
-                                            setLastVideoKey(keys[0]);
-
-                                            const rawVids = keys.map(key => ({
-                                                id: key, ...data[key],
-                                                likesCount: data[key].likes ? Object.keys(data[key].likes).length : 0,
-                                                hasLiked: data[key].likes ? !!data[key].likes[user.id] : false,
-                                                commentsCount: data[key].comments ? Object.keys(data[key].comments).length : 0,
-                                            })).filter(p => p.type === 'video' || (p.mediaUrl && (p.mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i) || (p.mediaUrl.includes('file-') && p.mediaUrl.includes('-mp4')))));
-
-                                            // Se não achou vídeos suficientes, pega do cache/algoritmo
-                                            let finalVids = rawVids.slice(0, 10);
-                                            if (finalVids.length < 10) {
-                                                let recommended = window.AlgorithmManager ? window.AlgorithmManager.getRecommendedVideos(user.id, videoPostsRef.current) : videoPostsRef.current;
-                                                if (recommended.length === 0) recommended = videoPostsRef.current;
-                                                finalVids = [...finalVids, ...recommended.slice(0, 10 - finalVids.length)];
-                                            }
-
-                                            const appended = finalVids.map((v, i) => ({...v, uniqueKey: `${v.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`}));
-
-                                            setInfiniteFeed(prev => {
-                                                const newFeed = [...prev, ...appended];
-                                                const unique = [];
-                                                const seen = new Set();
-                                                for (const item of newFeed) {
-                                                    if (!seen.has(item.uniqueKey)) {
-                                                        seen.add(item.uniqueKey);
-                                                        unique.push(item);
-                                                    }
-                                                }
-                                                return unique;
-                                            });
-                                        } else {
-                                            setHasMoreVideos(false);
-                                            // Fallback para repetir os recomendados se a base acabou
-                                            let recommended = window.AlgorithmManager ? window.AlgorithmManager.getRecommendedVideos(user.id, videoPostsRef.current) : videoPostsRef.current;
-                                            if (recommended.length > 0) {
-                                                const appended = recommended.slice(0, 10).map((v, i) => ({...v, uniqueKey: `${v.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${i}`}));
-                                                setInfiniteFeed(prev => [...prev, ...appended]);
-                                            }
-                                        }
-                                    } catch (err) {
-                                        console.error(err);
-                                    } finally {
-                                        setIsLoadingMoreVideos(false);
-                                    }
-                                };
-                                loadMoreVids();
-                            }
-
-                        } else {
-                            if (video && !video.paused) {
-                                video.pause();
-                            }
-                        }
-                    });
-                }, {
-                    root: container,
-                    threshold: 0.6
-                });
-
-                // Observe all current children
-                const observeChildren = () => {
-                    Array.from(container.children).forEach(child => {
-                        observer.observe(child);
-                    });
-                };
-                observeChildren();
-
-                // Set up mutation observer to watch for new appended children
-                const mutationObserver = new MutationObserver(() => observeChildren());
-                mutationObserver.observe(container, { childList: true });
-
-            }, 50);
-
-            return () => {
-                clearTimeout(initTimer);
-                if (observer) observer.disconnect();
-            };
-        }
-    }, [activeVideoFeed !== null, infiniteFeed.length]);
 
     // Update URL when active video changes
     React.useEffect(() => {
@@ -580,444 +432,10 @@ function SocialNetwork({ user, onClose }) {
     };
 
     const getYoutubeId = (url) => {
-        if (!url) return null;
+        if (!url || typeof url !== 'string') return null;
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
         const match = url.match(regExp);
         return (match && match[2].length === 11) ? match[2] : null;
-    };
-
-    const comprimirImagem = (file) => {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    const MAX_WIDTH = 1080;
-                    if (width > MAX_WIDTH) {
-                        height = Math.round((height * MAX_WIDTH) / width);
-                        width = MAX_WIDTH;
-                    }
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    const base64Comprimido = canvas.toDataURL('image/jpeg', 0.4); 
-                    resolve({ base64: base64Comprimido, type: 'image/jpeg' });
-                };
-            };
-        });
-    };
-
-    const comprimirVideo = async (file) => {
-        try {
-            const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
-            const { fetchFile } = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
-
-            const ffmpeg = new FFmpeg();
-            await ffmpeg.load({
-                coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js'
-            });
-
-            setUploadStatus('Processando e reduzindo tamanho do vídeo...');
-            ffmpeg.on('progress', ({ progress }) => {
-                setUploadProgress(Math.round(progress * 100));
-            });
-
-            const inputName = 'input.mp4';
-            const outputName = 'output.mp4';
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
-            await ffmpeg.exec([
-                '-i', inputName,
-                '-vf', 'scale=480:-2', 
-                '-vcodec', 'libx264',
-                '-crf', '32',          
-                '-b:v', '400k',        
-                '-b:a', '64k',         
-                outputName
-            ]);
-            const data = await ffmpeg.readFile(outputName);
-            const videoBlob = new Blob([data.buffer], { type: 'video/mp4' });
-
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    resolve({ base64: reader.result, type: 'video/mp4' });
-                };
-                reader.readAsDataURL(videoBlob);
-            });
-        } catch (e) {
-            console.error(e);
-            setUploadStatus('Compressão falhou. Lendo original...');
-            return null; // Fallback
-        }
-    };
-
-    const processFile = async (file) => {
-        if (!file) return;
-
-        // Limite de 5MB (5 * 1024 * 1024 bytes)
-        const MAX_SIZE = 5 * 1024 * 1024;
-        if (file.size > MAX_SIZE) {
-            showToast("O arquivo não pode ter mais que 5MB.");
-            return;
-        }
-
-        setIsUploading(true);
-        setUploadProgress(0);
-        setUploadStatus('Iniciando processamento...');
-
-        const FIREBASE_DB_URL = 'https://data-7dc04-default-rtdb.firebaseio.com';
-        const PUTER_WORKER_URL = 'https://cdn-phantora-api.puter.work';
-
-        const idAleatorio = (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').substring(0, 12) : Math.random().toString(36).substring(2, 14));
-        const timestamp = Date.now();
-        const extOriginalLimpa = file.name.split('.').pop().toLowerCase().replace(/[\.\$\#\[\]\/]/g, '');
-
-        let nomeAleatorio = '';
-        let base64Data = '';
-        let contentTypeFinal = '';
-        let finalPostType = 'image';
-
-        try {
-            if (file.type.startsWith('image/')) {
-                nomeAleatorio = `file-${timestamp}-${idAleatorio}-jpg`;
-                setUploadStatus('Comprimindo imagem...');
-                const resultado = await comprimirImagem(file);
-                base64Data = resultado.base64;
-                contentTypeFinal = resultado.type;
-                finalPostType = 'image';
-            } 
-            else if (file.type.startsWith('video/')) {
-                nomeAleatorio = `file-${timestamp}-${idAleatorio}-mp4`;
-                finalPostType = 'video';
-                const resultadoVideo = await comprimirVideo(file);
-
-                if (resultadoVideo) {
-                    base64Data = resultadoVideo.base64;
-                    contentTypeFinal = resultadoVideo.type;
-                } else {
-                    setUploadStatus('Convertendo vídeo para formato suportado...');
-                    base64Data = await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onload = (ev) => resolve(ev.target.result);
-                        reader.readAsDataURL(file);
-                    });
-                    contentTypeFinal = file.type;
-                }
-            } 
-            else {
-                nomeAleatorio = `file-${timestamp}-${idAleatorio}-${extOriginalLimpa}`;
-                setUploadStatus('Lendo arquivo original...');
-                base64Data = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => resolve(ev.target.result);
-                    reader.readAsDataURL(file);
-                });
-                contentTypeFinal = file.type || 'application/octet-stream';
-            }
-
-            setUploadStatus('Enviando para os servidores...');
-            const urlDiretaFirebase = `${FIREBASE_DB_URL}/arquivos/${encodeURIComponent(nomeAleatorio)}.json`;
-
-            const response = await fetch(urlDiretaFirebase, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    base64: base64Data,
-                    contentType: contentTypeFinal
-                })
-            });
-
-            if (response.ok) {
-                setUploadStatus('Upload concluído!');
-                const linkVisualizacao = `${PUTER_WORKER_URL}/cdn/${encodeURIComponent(nomeAleatorio)}`;
-                setPostMediaUrl(linkVisualizacao);
-                setPostType(finalPostType);
-                showToast("Mídia anexada com sucesso!");
-            } else {
-                const errText = await response.text();
-                setUploadStatus(`Erro no upload: ${errText}`);
-                showToast("Erro ao fazer upload da mídia.");
-            }
-        } catch (error) {
-            setUploadStatus(`Erro: ${error.message}`);
-            showToast("Erro no processamento da mídia.");
-        } finally {
-            setTimeout(() => {
-                setIsUploading(false);
-                setUploadStatus('');
-                setUploadProgress(0);
-            }, 2000);
-        }
-    };
-
-    const handleFileUpload = (e) => {
-        processFile(e.target.files[0]);
-    };
-
-    const handleCameraCapture = (file, type) => {
-        setShowCamera(false);
-        processFile(file);
-    };
-
-    const deletarArquivoCDN = async (urlDaMidia) => {
-        if (!urlDaMidia || !urlDaMidia.includes('cdn-phantora-api.puter.work')) return;
-        const partes = urlDaMidia.split("/");
-        const filename = partes[partes.length - 1];
-
-        try {
-            const response = await fetch("https://cdn-phantora-api.puter.work/manage", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    key: "phantora-secret-key-123",
-                    action: "delete",
-                    filename: filename
-                })
-            });
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error("Erro ao deletar do CDN:", error);
-            return { success: false, error: error.message };
-        }
-    };
-
-    const handleDeletePost = async (postId) => {
-        if (window.confirm("Deseja realmente excluir esta publicação?")) {
-            const post = posts.find(p => p.id === postId);
-            if (post) {
-                if (post.mediaUrl) await deletarArquivoCDN(post.mediaUrl);
-                if (post.mediaUrls) {
-                    for (const url of post.mediaUrls) await deletarArquivoCDN(url);
-                }
-                if (post.textCdnUrl) await deletarArquivoCDN(post.textCdnUrl);
-                if (post.audioUrl) await deletarArquivoCDN(post.audioUrl);
-                if (post.audioId) await window.firebaseDB.ref(`audios/${post.audioId}`).remove();
-                if (post.pollCdnUrl) await deletarArquivoCDN(post.pollCdnUrl);
-            }
-
-            await window.firebaseDB.ref(`posts/${postId}`).remove();
-            showToast("Post excluído!");
-        }
-    };
-
-    const handleLike = async (postId, hasLiked, isInfiniteFeed = false, uniqueKey = null) => {
-        const db = window.firebaseDB;
-        if (!db) return;
-
-        // Atualização otimista na interface do feed infinito
-        if (isInfiniteFeed && uniqueKey) {
-            setInfiniteFeed(prev => prev.map(p => {
-                if (p.uniqueKey === uniqueKey) {
-                    return {
-                        ...p,
-                        hasLiked: !hasLiked,
-                        likesCount: !hasLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1)
-                    };
-                }
-                return p;
-            }));
-
-            if (!hasLiked) {
-                try {
-                    if (likeSoundRef.current) {
-                        likeSoundRef.current.currentTime = 0;
-                        likeSoundRef.current.volume = 0.6;
-                        const playPromise = likeSoundRef.current.play();
-                        if (playPromise !== undefined) {
-                            playPromise.catch(e => console.log('Erro ao tocar som de like:', e));
-                        }
-                    }
-                } catch (e) {}
-            }
-        }
-
-        const likeRef = db.ref(`posts/${postId}/likes/${user.id}`);
-        try {
-            if (hasLiked) {
-                await likeRef.remove();
-            } else {
-                await likeRef.set(true);
-
-                const post = posts.find(p => p.id === postId);
-                if (post && post.hashtags && window.updateAlgorithmProfile) {
-                    window.updateAlgorithmProfile(user.id, 'like', post.hashtags, 2);
-                }
-            }
-        } catch (error) {
-            console.error("Erro ao curtir:", error);
-            showToast("Erro ao processar a curtida.");
-        }
-    };
-
-    const handleAddComment = async (postId) => {
-        if (!commentText.trim()) return;
-        const db = window.firebaseDB;
-
-        try {
-            await db.ref(`posts/${postId}/comments`).push({
-                authorId: user.id,
-                authorName: user.name,
-                authorAvatar: user.avatar || '',
-                text: commentText.trim(),
-                timestamp: Date.now()
-            });
-            setCommentText('');
-            showToast("Comentário adicionado!");
-        } catch (e) {
-            console.error(e);
-            showToast("Erro ao comentar.");
-        }
-    };
-
-    const handleDeleteComment = async (postId, commentId) => {
-        if (window.confirm("Apagar este comentário?")) {
-            await window.firebaseDB.ref(`posts/${postId}/comments/${commentId}`).remove();
-            showToast("Comentário apagado.");
-        }
-    };
-
-    const handleShareToChat = async (chatId, type) => {
-        if (!postToShare || !window.firebaseDB) return;
-
-        setSharingTo(prev => ({ ...prev, [chatId]: true }));
-
-        try {
-            const targetId = contacts.find(c => c.id === chatId)?.targetId || chatId;
-            const refPath = type === 'group' ? `groups/${chatId}/messages` : `chats/${[user.id, targetId].sort().join('_')}/messages`;
-            const shareUrl = `${window.location.origin}${window.location.pathname.replace('chat.html', 'index.html').replace('social.html', 'index.html')}?v=${postToShare.id}&from=${user.id}`;
-
-            const msgData = {
-                senderId: user.id,
-                senderName: user.name,
-                type: 'shared_video',
-                postUrl: shareUrl,
-                mediaUrl: postToShare.mediaUrl,
-                postTitle: postToShare.content ? postToShare.content.substring(0, 50) + '...' : 'Vídeo',
-                postAuthor: postToShare.authorName,
-                timestamp: Date.now()
-            };
-
-            await window.firebaseDB.ref(refPath).push(msgData);
-
-            // Update last message
-            const chatUpdate = { lastMessage: `🎬 Vídeo compartilhado`, timestamp: Date.now() };
-            if (type === 'group') {
-                const groupSnap = await window.firebaseDB.ref(`groups/${chatId}/members`).once('value');
-                const members = groupSnap.val() || {};
-                for (const uid of Object.keys(members)) {
-                    await window.firebaseDB.ref(`users/${uid}/chats/${chatId}`).update(chatUpdate);
-                }
-            } else {
-                const targetId = contacts.find(c => c.id === chatId)?.targetId || chatId;
-                await window.firebaseDB.ref(`users/${user.id}/chats/${chatId}`).update(chatUpdate);
-                if (targetId !== user.id) {
-                    await window.firebaseDB.ref(`users/${targetId}/chats/${chatId}`).update(chatUpdate);
-                }
-            }
-
-            setSharedSuccess(prev => ({ ...prev, [chatId]: true }));
-            setTimeout(() => {
-                setSharedSuccess(prev => ({ ...prev, [chatId]: false }));
-            }, 2000);
-
-        } catch (e) {
-            console.error(e);
-            showToast("Erro ao compartilhar.");
-        } finally {
-            setSharingTo(prev => ({ ...prev, [chatId]: false }));
-        }
-    };
-
-    const handleShare = (post) => {
-        setPostToShare(post);
-        setShowShareModal(true);
-    };
-
-    const handleQuickShare = async () => {
-        if (!quickShareUserId || isQuickSharing || activeVideoFeed === null) return;
-        const currentPost = videoPostsRef.current[activeVideoFeed];
-        if (!currentPost) return;
-
-        setIsQuickSharing(true);
-        try {
-            // Find chat id with that user
-            const chatSnap = await window.firebaseDB.ref(`users/${user.id}/chats`).once('value');
-            let targetChatId = null;
-            if (chatSnap.exists()) {
-                const chats = chatSnap.val();
-                for (const [cId, cData] of Object.entries(chats)) {
-                    if (cData.targetId === quickShareUserId || cId === quickShareUserId) {
-                        targetChatId = cId;
-                        break;
-                    }
-                }
-            }
-            if (!targetChatId) targetChatId = quickShareUserId; // fallback
-
-            const refPath = `chats/${[user.id, quickShareUserId].sort().join('_')}/messages`;
-            const shareUrl = `${window.location.origin}${window.location.pathname}?v=${currentPost.id}&from=${user.id}`;
-
-            await window.firebaseDB.ref(refPath).push({
-                senderId: user.id,
-                senderName: user.name,
-                type: 'shared_video',
-                postUrl: shareUrl,
-                mediaUrl: currentPost.mediaUrl,
-                postTitle: currentPost.content ? currentPost.content.substring(0, 50) + '...' : 'Vídeo',
-                postAuthor: currentPost.authorName,
-                timestamp: Date.now()
-            });
-
-            await window.firebaseDB.ref(`users/${user.id}/chats/${targetChatId}`).update({ lastMessage: `🎬 Vídeo compartilhado`, timestamp: Date.now() });
-            await window.firebaseDB.ref(`users/${quickShareUserId}/chats/${targetChatId}`).update({ lastMessage: `🎬 Vídeo compartilhado`, timestamp: Date.now() });
-
-            setQuickShareSuccess(true);
-            setTimeout(() => setQuickShareSuccess(false), 2500);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setIsQuickSharing(false);
-        }
-    };
-
-    const handleExport = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(posts));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href",     dataStr);
-        downloadAnchorNode.setAttribute("download", "phantora_posts_backup.json");
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
-        showToast("Dados exportados!");
-    };
-
-    const handleImport = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            try {
-                const importedPosts = JSON.parse(event.target.result);
-                if (window.confirm("Isso adicionará os posts importados ao servidor. Continuar?")) {
-                    const db = window.firebaseDB;
-                    for (const post of importedPosts) {
-                        const { id, likesCount, hasLiked, commentsCount, ...postData } = post;
-                        await db.ref('posts').push(postData);
-                    }
-                    showToast("Dados importados com sucesso!");
-                }
-            } catch (err) {
-                showToast("Erro ao ler o arquivo JSON.");
-            }
-        };
-        reader.readAsText(file);
     };
 
     const getRelativeTime = (timestamp) => {
@@ -1032,7 +450,7 @@ function SocialNetwork({ user, onClose }) {
     };
 
     const renderTextWithHashtags = (text) => {
-        if (!text) return null;
+        if (!text || typeof text !== 'string') return null;
         const words = text.split(/(\s+)/);
         return words.map((word, i) => {
             if (word.startsWith('#') && word.length > 1) {
@@ -1056,6 +474,16 @@ function SocialNetwork({ user, onClose }) {
         });
     };
 
+    // ==========================================================
+    // HELPER: extrai URL de mediaUrl (aceita string ou objeto)
+    // ==========================================================
+    const extractUrl = (item) => {
+        if (!item) return '';
+        if (typeof item === 'string') return item;
+        if (typeof item === 'object') return item.url || item.src || item.file || '';
+        return '';
+    };
+
     const allItems = [...posts].sort((a, b) => b.timestamp - a.timestamp);
 
     const filteredPosts = allItems.filter(post => {
@@ -1063,12 +491,14 @@ function SocialNetwork({ user, onClose }) {
         const matchesSearch = post.content?.toLowerCase().includes(searchLower) || 
                               post.authorName?.toLowerCase().includes(searchLower) ||
                               (post.hashtags && post.hashtags.some(h => h.toLowerCase().includes(searchLower)));
-        const matchesType = filterType === 'all' || post.type === filterType || (filterType === 'image' && post.type === 'video'); // Agrupando mídias
+        const matchesType = filterType === 'all' || post.type === filterType || (filterType === 'image' && post.type === 'video');
         return matchesSearch && matchesType;
     });
 
-    const videoPosts = filteredPosts.filter(p => p.type === 'video' || (p.mediaUrl && (p.mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i) || (p.mediaUrl.includes('file-') && p.mediaUrl.includes('-mp4')))));
-    videoPostsRef.current = videoPosts;
+    const videoPosts = filteredPosts.filter(p => {
+        const url = extractUrl(p.mediaUrl) || (p.mediaUrls && extractUrl(p.mediaUrls[0]));
+        return p.type === 'video' || (url && (url.match(/\.(mp4|webm|ogg|mov)$/i) || (url.includes('file-') && url.includes('-mp4'))));
+    });
 
     const isDark = theme === 'dark';
     const bgClass = 'bg-primary text-primary';
@@ -1091,6 +521,7 @@ function SocialNetwork({ user, onClose }) {
                 <div className="flex items-center gap-3">
                     <img 
                         src={user.avatar || 'assets/default-avatar.svg'}
+                        onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
                         alt="Avatar" 
                         className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer hover:opacity-80 transition-opacity shrink-0"
                         onClick={() => window.location.href = `canal.html?uid=${user.id}`}
@@ -1125,7 +556,6 @@ function SocialNetwork({ user, onClose }) {
                 </div>
             </header>
 
-            {/* Navigation Menus */}
             {/* Mobile Bottom Navigation */}
             <div className="md:hidden fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center justify-between w-[90%] max-w-[400px] shadow-lg">
                 <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary hover:text-text-primary'}`}>
@@ -1141,11 +571,10 @@ function SocialNetwork({ user, onClose }) {
                 </button>
 
                 <button onClick={() => {
-                    if (videoPostsRef.current.length > 0) {
-                        const initialList = videoPostsRef.current.map(v => ({...v, uniqueKey: v.id}));
+                    if (videoPosts.length > 0) {
+                        const initialList = videoPosts.map(v => ({...v, uniqueKey: v.id}));
                         setInfiniteFeed(initialList);
-                        let startIdx = 0;
-                        setActiveVideoFeed(startIdx);
+                        setActiveVideoFeed(0);
                     } else {
                         showToast("Nenhum vídeo disponível no momento.");
                     }
@@ -1155,9 +584,6 @@ function SocialNetwork({ user, onClose }) {
 
                 <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95">
                     <div className="icon-user text-2xl"></div>
-                </button>
-                <button onClick={() => setShowSettings(true)} className="flex flex-col items-center gap-1 text-text-secondary hover:text-text-primary transition-colors active:scale-95 sm:hidden">
-                    <div className="icon-settings text-2xl"></div>
                 </button>
             </div>
 
@@ -1176,9 +602,9 @@ function SocialNetwork({ user, onClose }) {
                 </button>
 
                 <button onClick={() => {
-                    if (videoPostsRef.current.length > 0) {
+                    if (videoPosts.length > 0) {
                         setDesktopView('feed');
-                        const initialList = videoPostsRef.current.map(v => ({...v, uniqueKey: v.id}));
+                        const initialList = videoPosts.map(v => ({...v, uniqueKey: v.id}));
                         setInfiniteFeed(initialList);
                         setActiveVideoFeed(0);
                     } else {
@@ -1202,7 +628,7 @@ function SocialNetwork({ user, onClose }) {
                 ) : (
                     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                         <div className="bg-white p-6 rounded-xl shadow-xl">
-                            <p>O menu de configurações está carregando ou ocorreu um erro...</p>
+                            <p>O menu de configurações está carregando...</p>
                             <button onClick={() => setShowSettings(false)} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg">Fechar</button>
                         </div>
                     </div>
@@ -1216,7 +642,11 @@ function SocialNetwork({ user, onClose }) {
                         {stories.map((story, i) => (
                             <div key={story.id} onClick={() => setActiveStory(i)} className="flex flex-col items-center gap-1 cursor-pointer group flex-shrink-0">
                                 <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-indigo-600">
-                                    <img src={story.authorAvatar || 'assets/default-avatar.svg'} className="w-full h-full rounded-full object-cover border-2 border-[var(--dark-surface)] group-hover:scale-105 transition-transform" />
+                                    <img 
+                                        src={story.authorAvatar || 'assets/default-avatar.svg'} 
+                                        onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
+                                        className="w-full h-full rounded-full object-cover border-2 border-[var(--dark-surface)] group-hover:scale-105 transition-transform" 
+                                    />
                                 </div>
                                 <span className={`text-xs font-medium max-w-[64px] truncate text-text-primary`}>{(story.authorName || 'Usuário').split(' ')[0]}</span>
                             </div>
@@ -1236,7 +666,11 @@ function SocialNetwork({ user, onClose }) {
                         ))}
                     </div>
                     <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
-                        <img src={stories[activeStory].authorAvatar || 'assets/default-avatar.svg'} className="w-10 h-10 rounded-full border border-white" />
+                        <img 
+                            src={stories[activeStory].authorAvatar || 'assets/default-avatar.svg'} 
+                            onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
+                            className="w-10 h-10 rounded-full border border-white" 
+                        />
                         <span className="text-white font-bold">{stories[activeStory].authorName || 'Usuário'}</span>
                         <span className="text-white/70 text-xs">{getRelativeTime(stories[activeStory].timestamp || Date.now())}</span>
                     </div>
@@ -1248,10 +682,10 @@ function SocialNetwork({ user, onClose }) {
                         <div className="absolute left-0 top-0 w-1/3 h-full z-10" onClick={(e) => { e.stopPropagation(); setActiveStory(prev => prev > 0 ? prev - 1 : prev); }}></div>
                         <div className="absolute right-0 top-0 w-1/3 h-full z-10" onClick={(e) => { e.stopPropagation(); setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null); }}></div>
 
-                        {(stories[activeStory].mediaUrl?.match(/\.(mp4|webm|ogg|mov)$/i) || stories[activeStory].type === 'video') ? (
-                            <video src={stories[activeStory].mediaUrl} autoPlay playsInline className="max-w-full max-h-full object-contain" onEnded={() => setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null)} />
+                        {(extractUrl(stories[activeStory].mediaUrl).match(/\.(mp4|webm|ogg|mov)$/i) || stories[activeStory].type === 'video') ? (
+                            <video src={extractUrl(stories[activeStory].mediaUrl)} autoPlay playsInline className="max-w-full max-h-full object-contain" onEnded={() => setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null)} />
                         ) : (
-                            <img src={stories[activeStory].mediaUrl} className="max-w-full max-h-full object-contain" />
+                            <img src={extractUrl(stories[activeStory].mediaUrl)} className="max-w-full max-h-full object-contain" />
                         )}
                         {stories[activeStory].content && (
                             <div className="absolute bottom-20 left-0 w-full text-center p-4">
@@ -1270,11 +704,14 @@ function SocialNetwork({ user, onClose }) {
                             <button onClick={() => setSelectedUser(null)} className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 rounded-full">
                                 <div className="icon-x text-xl"></div>
                             </button>
-                            <img src={selectedUser.avatar || 'assets/default-avatar.svg'} alt="Profile" className="w-24 h-24 rounded-full object-cover mx-auto border-4 border-indigo-100 mb-4" />
+                            <img 
+                                src={selectedUser.avatar || 'assets/default-avatar.svg'} 
+                                onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
+                                alt="Profile" 
+                                className="w-24 h-24 rounded-full object-cover mx-auto border-4 border-indigo-100 mb-4" 
+                            />
                             <h3 className="text-xl font-bold">{selectedUser.name || 'Usuário'}</h3>
                             <p className={`text-sm ${textMuted} mb-6`}>@{(selectedUser.name || 'usuario').toLowerCase().replace(/\s/g, '')}</p>
-
-
                         </div>
                     </div>
                 </div>
@@ -1287,274 +724,268 @@ function SocialNetwork({ user, onClose }) {
                     </div>
                 ) : (
                     <>
-                        {/* Search Redirect Button */}
                         <div className={`p-4 ${cardBg} mb-6 max-w-2xl mx-auto`}>
-                    <button onClick={() => window.location.href = 'upload.html'} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary text-text-muted hover:border-border-active transition-colors">
-                        <div className="icon-plus text-accent text-lg"></div>
-                        <span className="font-semibold text-text-primary">Criar nova publicação...</span>
-                    </button>
-                </div>
+                            <button onClick={() => window.location.href = 'upload.html'} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary text-text-muted hover:border-border-active transition-colors">
+                                <div className="icon-plus text-accent text-lg"></div>
+                                <span className="font-semibold text-text-primary">Criar nova publicação...</span>
+                            </button>
+                        </div>
 
-
-
-                {filteredPosts.length === 0 ? (
-                    <div className={`text-center mt-10 ${textMuted}`}>
-                        <div className="icon-image text-4xl mb-3 opacity-50 mx-auto"></div>
-                        <p>Nenhuma publicação encontrada.</p>
-                    </div>
-                ) : (
-                    filteredPosts.map(post => (
-                        <div key={post.id} id={`post-${post.id}`} className={cardBg}>
-                            <div className="p-4 flex justify-between items-start">
-                                <div className="flex items-center gap-3">
-                                    <div 
-                                        className="cursor-pointer"
-                                        onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}
-                                    >
-                                        {post.authorAvatar ? (
-                                            <img src={post.authorAvatar} alt="Avatar" className="w-11 h-11 rounded-full object-cover border border-border shadow-sm" />
-                                        ) : (
-                                            <div className="w-11 h-11 rounded-full bg-tertiary flex items-center justify-center text-primary font-bold border border-border shadow-sm">
-                                                {(post.authorName || '?').charAt(0).toUpperCase()}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <h3 
-                                                className="font-bold text-base hover:text-accent cursor-pointer transition-colors"
+                        {filteredPosts.length === 0 ? (
+                            <div className={`text-center mt-10 ${textMuted}`}>
+                                <div className="icon-image text-4xl mb-3 opacity-50 mx-auto"></div>
+                                <p>Nenhuma publicação encontrada.</p>
+                            </div>
+                        ) : (
+                            filteredPosts.map(post => (
+                                <div key={post.id} id={`post-${post.id}`} className={cardBg}>
+                                    <div className="p-4 flex justify-between items-start">
+                                        <div className="flex items-center gap-3">
+                                            <div 
+                                                className="cursor-pointer"
                                                 onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}
                                             >
-                                                {post.authorName || 'Usuário'}
-                                            </h3>
-                                            {post.authorId !== user.id && (
-                                                <button 
-                                                    onClick={(e) => { e.stopPropagation(); toggleFollow(post.authorId); }}
-                                                    className={`text-xs px-2 py-0.5 rounded-md border font-semibold transition-colors ${following[post.authorId] ? 'border-border text-text-secondary hover:text-danger hover:border-danger hover:bg-danger/10' : 'border-accent text-accent hover:bg-accent hover:text-white'}`}
-                                                >
-                                                    {following[post.authorId] ? 'Seguindo' : 'Seguir'}
-                                                </button>
-                                            )}
-                                        </div>
-                                        <div className={`flex items-center gap-2 text-sm ${textMuted}`}>
-                                            <span>{getRelativeTime(post.timestamp)}</span>
-                                            {post.editedAt && <span>(editado)</span>}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {post.authorId === user.id && (
-                                    <div className="flex gap-2">
-                                        <button onClick={() => handleDeletePost(post.id)} className={`${textMuted} hover:text-danger p-1 transition-colors`}>
-                                            <div className="icon-trash text-sm"></div>
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-
-                            {post.title && (
-                                <div className="px-4 pt-2 pb-1 font-bold text-lg break-words text-primary">
-                                    {post.title}
-                                </div>
-                            )}
-                            {(post.content || post.textContent) && (
-                                <div className="px-4 pb-3 whitespace-pre-wrap text-[15px] break-words text-indigo-50 font-medium leading-relaxed">
-                                    {renderTextWithHashtags(post.content || post.textContent)}
-                                </div>
-                            )}
-
-                            {(() => {
-                                if (post.type === 'poll') {
-                                    if (post.pollData || post.question || post.pollCdnUrl) {
-                                        return <PollViewer key={`poll-${post.id}`} post={post} user={user} />;
-                                    }
-                                    return null;
-                                }
-
-                                if (post.type === 'carousel' && post.mediaUrls) {
-                                    return (
-                                        <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
-                                            {post.mediaUrls.map((mUrl, idx) => {
-                                                const isVid = mUrl.match(/\.(mp4|webm|ogg|mov)$/i) || mUrl.includes('video') || mUrl.includes('mp4');
-                                                if (isVid) {
-                                                    return (
-                                                        <div key={idx} className="w-full shrink-0 snap-center relative bg-black flex justify-center items-center group cursor-pointer" onClick={(e) => {
-                                                            const vid = e.currentTarget.querySelector('video');
-                                                            if (vid) {
-                                                                if (vid.paused) vid.play();
-                                                                else vid.pause();
-                                                            }
-                                                        }}>
-                                                            <video src={mUrl} className="w-full max-h-[500px] object-contain opacity-90 group-hover:opacity-100 transition" playsInline loop></video>
-                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none group-hover:opacity-0 transition-opacity">
-                                                                <div className="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
-                                                                    <div className="icon-play text-white text-3xl ml-1"></div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                }
-                                                return <img key={idx} src={mUrl} className="w-full shrink-0 snap-center max-h-[500px] object-contain bg-black" loading="lazy" />;
-                                            })}
-                                        </div>
-                                    );
-                                }
-
-                                const url = post.mediaUrl || (post.mediaUrls && post.mediaUrls[0]);
-                                if (!url) return null;
-
-                                const ytId = getYoutubeId(url);
-                                if (ytId) {
-                                    return (
-                                        <div className="relative w-full bg-black flex justify-center items-center overflow-hidden" style={{ aspectRatio: '16/9' }}>
-                                            <iframe 
-                                                src={`https://www.youtube.com/embed/${ytId}`} 
-                                                title="YouTube video player" 
-                                                frameBorder="0" 
-                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                                                allowFullScreen
-                                                className="w-full h-full absolute inset-0"
-                                            ></iframe>
-                                            <div className="absolute top-2 right-2 z-10 p-1 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg">
-                                                <img src="https://app.trickle.so/storage/public/images/usr_21422c7c08000001/b834fb47-4387-40bb-b8aa-c983117d9d5a.webp" alt="YouTube" className="w-6 h-6 object-contain pointer-events-none" />
-                                            </div>
-                                        </div>
-                                    );
-                                }
-
-                                const isVideo = post.type === 'video' || url.match(/\.(mp4|webm|ogg|mov)$/i) || (url.includes('file-') && url.includes('-mp4'));
-
-                                if (isVideo) {
-                                    return (
-                                        <div className="w-full bg-black flex justify-center items-center relative cursor-pointer group" onClick={() => {
-                                            const idx = videoPosts.findIndex(vp => vp.id === post.id);
-                                            const startIdx = idx !== -1 ? idx : 0;
-
-                                            // Ensure infinite feed starts with our initial list
-                                            const initialList = videoPosts.map(v => ({...v, uniqueKey: v.id}));
-                                            setInfiniteFeed(initialList);
-                                            setActiveVideoFeed(startIdx);
-                                        }}>
-                                            <video src={url} playsInline preload="metadata" className="w-full max-h-96 object-cover opacity-90 group-hover:opacity-100 transition"></video>
-                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                <div className="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
-                                                    <div className="icon-play text-white text-3xl ml-1"></div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                }
-
-                                if (post.type === 'image' || url) {
-                                    return <img src={url} alt="Post media" className={`w-full max-h-[500px] object-contain bg-primary border-t border-b border-border`} loading="lazy" />;
-                                }
-
-                                if (post.type === 'poll' && post.pollCdnUrl) {
-                                    return <PollViewer key={`poll-${post.id}`} post={post} user={user} />;
-                                }
-
-                                return null;
-                            })()}
-
-                            <div className={`px-4 py-3 border-t flex items-center justify-between border-border ${textMuted}`}>
-                                <div className="flex items-center gap-6">
-                                        <button 
-                                            onClick={() => handleLike(post.id, post.hasLiked)} 
-                                            className={`flex items-center gap-2 transition-colors ${post.hasLiked ? 'text-danger' : 'hover:text-danger'}`}
-                                        >
-                                            <div className={`icon-heart text-xl ${post.hasLiked ? 'fill-current' : ''}`}></div>
-                                            <span className="text-sm font-semibold">{post.likesCount}</span>
-                                        </button>
-
-                                        <button 
-                                            onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)}
-                                            className="flex items-center gap-2 hover:text-accent transition-colors"
-                                        >
-                                            <div className="icon-message-circle text-xl"></div>
-                                            <span className="text-sm font-semibold">{post.commentsCount}</span>
-                                        </button>
-                                    </div>
-
-                                <button onClick={() => handleShare(post)} className="hover:text-accent transition-colors">
-                                    <div className="icon-share-2 text-xl"></div>
-                                </button>
-                            </div>
-
-                            {/* Comentários */}
-
-                            {activeCommentPost === post.id && (
-                                <div className={`p-4 border-t bg-tertiary/30 border-border`}>
-                                    <div className="flex gap-2 mb-4">
-                                        <input 
-                                            type="text" 
-                                            value={commentText}
-                                            onChange={(e) => setCommentText(e.target.value)}
-                                            placeholder="Escreva um comentário..."
-                                            className={`flex-1 rounded-lg px-4 py-2 text-sm outline-none border focus:border-accent focus:shadow-[0_0_0_3px_rgba(124,58,237,0.15)] bg-primary border-border text-primary transition-all`}
-                                            onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post.id)}
-                                        />
-                                        <button 
-                                            onClick={() => handleAddComment(post.id)}
-                                            disabled={!commentText.trim()}
-                                            className="bg-accent text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 hover:bg-accent-hover transition-colors active:scale-95"
-                                        >
-                                            Enviar
-                                        </button>
-                                    </div>
-
-                                    <div className="space-y-4 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                                        {post.comments && Object.keys(post.comments).map(cId => {
-                                            const comment = post.comments[cId];
-                                            return (
-                                                <div key={cId} className="flex gap-3 group">
-                                                    {comment.authorAvatar ? (
-                                                        <img src={comment.authorAvatar} className="w-8 h-8 rounded-full object-cover shadow-sm border border-border" />
-                                                    ) : (
-                                                        <div className="w-8 h-8 rounded-full bg-tertiary flex items-center justify-center text-xs font-bold text-primary shrink-0 border border-border">
-                                                            {(comment.authorName || '?').charAt(0)}
-                                                        </div>
-                                                    )}
-                                                    <div className={`px-4 py-3 rounded-2xl rounded-tl-sm text-sm flex-1 bg-secondary border border-border shadow-sm`}>
-                                                        <div className="flex justify-between items-start mb-1">
-                                                            <span className="font-bold block text-sm text-primary">{comment.authorName || 'Usuário'}</span>
-                                                            {(comment.authorId === user.id || post.authorId === user.id) && (
-                                                                <button onClick={() => handleDeleteComment(post.id, cId)} className="opacity-0 group-hover:opacity-100 text-danger hover:text-red-400 text-xs transition-opacity">
-                                                                    <div className="icon-trash"></div>
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                        <span className="text-text-primary leading-relaxed">{comment.text}</span>
-                                                        <span className={`block text-[11px] mt-2 text-text-secondary`}>{getRelativeTime(comment.timestamp)}</span>
+                                                {post.authorAvatar ? (
+                                                    <img 
+                                                        src={post.authorAvatar} 
+                                                        onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
+                                                        alt="Avatar" 
+                                                        className="w-11 h-11 rounded-full object-cover border border-border shadow-sm" 
+                                                    />
+                                                ) : (
+                                                    <div className="w-11 h-11 rounded-full bg-tertiary flex items-center justify-center text-primary font-bold border border-border shadow-sm">
+                                                        {(post.authorName || '?').charAt(0).toUpperCase()}
                                                     </div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h3 
+                                                        className="font-bold text-base hover:text-accent cursor-pointer transition-colors"
+                                                        onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}
+                                                    >
+                                                        {post.authorName || 'Usuário'}
+                                                    </h3>
+                                                    {post.authorId !== user.id && (
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); toggleFollow(post.authorId); }}
+                                                            className={`text-xs px-2 py-0.5 rounded-md border font-semibold transition-colors ${following[post.authorId] ? 'border-border text-text-secondary hover:text-danger hover:border-danger hover:bg-danger/10' : 'border-accent text-accent hover:bg-accent hover:text-white'}`}
+                                                        >
+                                                            {following[post.authorId] ? 'Seguindo' : 'Seguir'}
+                                                        </button>
+                                                    )}
                                                 </div>
-                                            )
-                                        })}
-                                        {(!post.comments || Object.keys(post.comments).length === 0) && (
-                                            <p className={`text-center text-sm py-4 text-text-muted`}>Seja o primeiro a comentar.</p>
+                                                <div className={`flex items-center gap-2 text-sm ${textMuted}`}>
+                                                    <span>{getRelativeTime(post.timestamp)}</span>
+                                                    {post.editedAt && <span>(editado)</span>}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {post.authorId === user.id && (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => handleDeletePost(post.id)} className={`${textMuted} hover:text-danger p-1 transition-colors`}>
+                                                    <div className="icon-trash text-sm"></div>
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
+
+                                    {post.title && (
+                                        <div className="px-4 pt-2 pb-1 font-bold text-lg break-words text-primary">
+                                            {post.title}
+                                        </div>
+                                    )}
+                                    {(post.content || post.textContent) && (
+                                        <div className="px-4 pb-3 whitespace-pre-wrap text-[15px] break-words text-indigo-50 font-medium leading-relaxed">
+                                            {renderTextWithHashtags(post.content || post.textContent)}
+                                        </div>
+                                    )}
+
+                                    {(() => {
+                                        if (post.type === 'poll') {
+                                            if (post.pollData || post.question || post.pollCdnUrl) {
+                                                return window.PollViewer ? <window.PollViewer key={`poll-${post.id}`} post={post} user={user} /> : null;
+                                            }
+                                            return null;
+                                        }
+
+                                        if (post.type === 'carousel' && post.mediaUrls) {
+                                            return (
+                                                <div className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
+                                                    {post.mediaUrls.map((mUrlRaw, idx) => {
+                                                        // ⬇️ ACEITA STRING OU OBJETO
+                                                        const mUrl = extractUrl(mUrlRaw);
+                                                        if (!mUrl) return null;
+                                                        
+                                                        const isVid = mUrl.match(/\.(mp4|webm|ogg|mov)$/i) || mUrl.includes('video') || mUrl.includes('mp4');
+                                                        if (isVid) {
+                                                            return (
+                                                                <div key={idx} className="w-full shrink-0 snap-center relative bg-black flex justify-center items-center group cursor-pointer" onClick={(e) => {
+                                                                    const vid = e.currentTarget.querySelector('video');
+                                                                    if (vid) {
+                                                                        if (vid.paused) vid.play();
+                                                                        else vid.pause();
+                                                                    }
+                                                                }}>
+                                                                    <video src={mUrl} className="w-full max-h-[500px] object-contain opacity-90 group-hover:opacity-100 transition" playsInline loop></video>
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return <img key={idx} src={mUrl} onError={(e) => { e.target.style.display = 'none'; }} className="w-full shrink-0 snap-center max-h-[500px] object-contain bg-black" loading="lazy" />;
+                                                    })}
+                                                </div>
+                                            );
+                                        }
+
+                                        const urlRaw = post.mediaUrl || (post.mediaUrls && post.mediaUrls[0]);
+                                        const url = extractUrl(urlRaw);
+                                        if (!url) return null;
+
+                                        const ytId = getYoutubeId(url);
+                                        if (ytId) {
+                                            return (
+                                                <div className="relative w-full bg-black flex justify-center items-center overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                                                    <iframe 
+                                                        src={`https://www.youtube.com/embed/${ytId}`} 
+                                                        title="YouTube video player" 
+                                                        frameBorder="0" 
+                                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                                        allowFullScreen
+                                                        className="w-full h-full absolute inset-0"
+                                                    ></iframe>
+                                                </div>
+                                            );
+                                        }
+
+                                        const isVideo = post.type === 'video' || url.match(/\.(mp4|webm|ogg|mov)$/i) || (url.includes('file-') && url.includes('-mp4'));
+
+                                        if (isVideo) {
+                                            return (
+                                                <div className="w-full bg-black flex justify-center items-center relative cursor-pointer group" onClick={() => {
+                                                    const idx = videoPosts.findIndex(vp => vp.id === post.id);
+                                                    const startIdx = idx !== -1 ? idx : 0;
+                                                    const initialList = videoPosts.map(v => ({...v, uniqueKey: v.id}));
+                                                    setInfiniteFeed(initialList);
+                                                    setActiveVideoFeed(startIdx);
+                                                }}>
+                                                    <video src={url} playsInline preload="metadata" className="w-full max-h-96 object-cover opacity-90 group-hover:opacity-100 transition"></video>
+                                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                        <div className="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
+                                                            <div className="icon-play text-white text-3xl ml-1"></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+
+                                        if (post.type === 'image' || url) {
+                                            return <img src={url} onError={(e) => { e.target.style.display = 'none'; }} alt="Post media" className={`w-full max-h-[500px] object-contain bg-primary border-t border-b border-border`} loading="lazy" />;
+                                        }
+
+                                        return null;
+                                    })()}
+
+                                    <div className={`px-4 py-3 border-t flex items-center justify-between border-border ${textMuted}`}>
+                                        <div className="flex items-center gap-6">
+                                            <button 
+                                                onClick={() => handleLike(post.id, post.hasLiked)} 
+                                                className={`flex items-center gap-2 transition-colors ${post.hasLiked ? 'text-danger' : 'hover:text-danger'}`}
+                                            >
+                                                <div className={`icon-heart text-xl ${post.hasLiked ? 'fill-current' : ''}`}></div>
+                                                <span className="text-sm font-semibold">{post.likesCount}</span>
+                                            </button>
+
+                                            <button 
+                                                onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)}
+                                                className="flex items-center gap-2 hover:text-accent transition-colors"
+                                            >
+                                                <div className="icon-message-circle text-xl"></div>
+                                                <span className="text-sm font-semibold">{post.commentsCount}</span>
+                                            </button>
+                                        </div>
+
+                                        <button onClick={() => handleShare(post)} className="hover:text-accent transition-colors">
+                                            <div className="icon-share-2 text-xl"></div>
+                                        </button>
+                                    </div>
+
+                                    {activeCommentPost === post.id && (
+                                        <div className={`p-4 border-t bg-tertiary/30 border-border`}>
+                                            <div className="flex gap-2 mb-4">
+                                                <input 
+                                                    type="text" 
+                                                    value={commentText}
+                                                    onChange={(e) => setCommentText(e.target.value)}
+                                                    placeholder="Escreva um comentário..."
+                                                    className={`flex-1 rounded-lg px-4 py-2 text-sm outline-none border focus:border-accent focus:shadow-[0_0_0_3px_rgba(124,58,237,0.15)] bg-primary border-border text-primary transition-all`}
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post.id)}
+                                                />
+                                                <button 
+                                                    onClick={() => handleAddComment(post.id)}
+                                                    disabled={!commentText.trim()}
+                                                    className="bg-accent text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 hover:bg-accent-hover transition-colors active:scale-95"
+                                                >
+                                                    Enviar
+                                                </button>
+                                            </div>
+
+                                            <div className="space-y-4 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                                                {post.comments && Object.keys(post.comments).map(cId => {
+                                                    const comment = post.comments[cId];
+                                                    return (
+                                                        <div key={cId} className="flex gap-3 group">
+                                                            {comment.authorAvatar ? (
+                                                                <img 
+                                                                    src={comment.authorAvatar} 
+                                                                    onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
+                                                                    className="w-8 h-8 rounded-full object-cover shadow-sm border border-border" 
+                                                                />
+                                                            ) : (
+                                                                <div className="w-8 h-8 rounded-full bg-tertiary flex items-center justify-center text-xs font-bold text-primary shrink-0 border border-border">
+                                                                    {(comment.authorName || '?').charAt(0)}
+                                                                </div>
+                                                            )}
+                                                            <div className={`px-4 py-3 rounded-2xl rounded-tl-sm text-sm flex-1 bg-secondary border border-border shadow-sm`}>
+                                                                <div className="flex justify-between items-start mb-1">
+                                                                    <span className="font-bold block text-sm text-primary">{comment.authorName || 'Usuário'}</span>
+                                                                    {(comment.authorId === user.id || post.authorId === user.id) && (
+                                                                        <button onClick={() => handleDeleteComment(post.id, cId)} className="opacity-0 group-hover:opacity-100 text-danger hover:text-red-400 text-xs transition-opacity">
+                                                                            <div className="icon-trash"></div>
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-text-primary leading-relaxed">{comment.text}</span>
+                                                                <span className={`block text-[11px] mt-2 text-text-secondary`}>{getRelativeTime(comment.timestamp)}</span>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                                {(!post.comments || Object.keys(post.comments).length === 0) && (
+                                                    <p className={`text-center text-sm py-4 text-text-muted`}>Seja o primeiro a comentar.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                            ))
+                        )}
 
-                        </div>
-                    ))
-                )}
-
-                {isLoadingMore && (
-                    <div className="flex justify-center py-4">
-                        <div className="icon-loader animate-spin text-accent text-3xl"></div>
-                    </div>
-                )}
-                {!hasMorePosts && posts.length > 0 && (
-                    <div className="text-center py-4 text-text-muted text-sm">
-                        Você chegou ao fim do feed.
-                    </div>
-                )}
+                        {isLoadingMore && (
+                            <div className="flex justify-center py-4">
+                                <div className="icon-loader animate-spin text-accent text-3xl"></div>
+                            </div>
+                        )}
+                        {!hasMorePosts && posts.length > 0 && (
+                            <div className="text-center py-4 text-text-muted text-sm">
+                                Você chegou ao fim do feed.
+                            </div>
+                        )}
                     </>
                 )}
             </div>
 
-            {/* Fullscreen TikTok Style Video Feed */}
+            {/* Fullscreen Video Feed */}
             {activeVideoFeed !== null && window.VideoFeed && (
                 <window.VideoFeed
                     initialVideos={infiniteFeed}
@@ -1622,7 +1053,7 @@ function SocialNetwork({ user, onClose }) {
                                     <div key={c.id} className={`flex items-center justify-between p-3 rounded-xl transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
                                         <div className="flex items-center gap-3">
                                             {c.avatar ? (
-                                                <img src={c.avatar} className="w-10 h-10 rounded-full object-cover" />
+                                                <img src={c.avatar} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-10 h-10 rounded-full object-cover" />
                                             ) : (
                                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${c.type === 'group' ? 'bg-green-100 text-green-600' : 'bg-indigo-100 text-indigo-600'}`}>
                                                     {c.name.charAt(0).toUpperCase()}
@@ -1675,7 +1106,6 @@ function SocialNetwork({ user, onClose }) {
                             </button>
                             <button 
                                 onClick={() => {
-                                    // Registrar clique no analytics
                                     const db = window.firebaseDB;
                                     if(db) {
                                         try {
@@ -1702,23 +1132,23 @@ function SocialNetwork({ user, onClose }) {
                 <window.FriendSwipe user={user} onClose={() => setShowDiscovery(false)} />
             )}
 
-            {/* Modal de Criação de Post (PostCreator) */}
+            {/* Modal de Criação de Post */}
             {showPostCreator && (
-                <PostCreator 
-                    user={user} 
-                    onClose={() => setShowPostCreator(false)} 
-                    onUploadComplete={() => {
-                        setShowPostCreator(false);
-                        setFilterType('all');
-                    }} 
-                />
+                window.PostCreator ? (
+                    <window.PostCreator 
+                        user={user} 
+                        onClose={() => setShowPostCreator(false)} 
+                        onUploadComplete={() => {
+                            setShowPostCreator(false);
+                            setFilterType('all');
+                        }} 
+                    />
+                ) : null
             )}
 
-
-
-            {/* Renderização da Câmera por cima do Modal */}
-            {showCamera && (
-                <CameraCapture 
+            {/* Camera */}
+            {showCamera && window.CameraCapture && (
+                <window.CameraCapture 
                     onCapture={handleCameraCapture} 
                     onClose={() => setShowCamera(false)} 
                 />
