@@ -1,4 +1,4 @@
-function CameraCapture({ onCapture, onClose, photoOnly = false, embedded = false }) {
+function MediaCapture({ onCapture, onClose, photoOnly = false, embedded = false }) {
     const videoRef = React.useRef(null);
     const canvasRef = React.useRef(null);
     const arCanvasRef = React.useRef(null);
