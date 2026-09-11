@@ -13,6 +13,8 @@ function SocialNetwork({ user, onClose }) {
     const [searchQuery, setSearchQuery] = React.useState('');
     const [showShareModal, setShowShareModal] = React.useState(false);
     const [postToShare, setPostToShare] = React.useState(null);
+    const [shareStartTime, setShareStartTime] = React.useState(0);
+    const [generatedTag, setGeneratedTag] = React.useState(null);
     const [contacts, setContacts] = React.useState([]);
     const [sharingTo, setSharingTo] = React.useState({});
     const [sharedSuccess, setSharedSuccess] = React.useState({});
@@ -36,7 +38,9 @@ function SocialNetwork({ user, onClose }) {
     const [showSettings, setShowSettings] = React.useState(false);
     const [idToken, setIdToken] = React.useState(null);
     const [deletingPostId, setDeletingPostId] = React.useState(null);
-    const [friendSuggestions, setFriendSuggestions] = React.useState([]);
+    const [showTagViewer, setShowTagViewer] = React.useState(false);
+    const [currentTagId, setCurrentTagId] = React.useState(null);
+    const [sharingStartTime, setSharingStartTime] = React.useState(0);
     const autoOpenedVideoRef = React.useRef(false);
 
     React.useEffect(() => {
@@ -67,6 +71,16 @@ function SocialNetwork({ user, onClose }) {
         fetchToken();
         const interval = setInterval(fetchToken, 30 * 60 * 1000);
         return () => clearInterval(interval);
+    }, []);
+
+    // DETECTA ?tag=TAG_ID NA URL
+    React.useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const tagId = params.get('tag');
+        if (tagId) {
+            setCurrentTagId(tagId);
+            setShowTagViewer(true);
+        }
     }, []);
 
     const showToast = (msg) => {
@@ -110,30 +124,107 @@ function SocialNetwork({ user, onClose }) {
         } catch (e) { return null; }
     };
 
-    // AUTO-ABRIR VIDEO FEED SE URL TIVER ?v=
-    React.useEffect(() => {
-        if (autoOpenedVideoRef.current) return;
-        if (posts.length === 0) return;
-        const params = new URLSearchParams(window.location.search);
-        const videoId = params.get('v');
-        if (!videoId) return;
+    // GERA TAG ÚNICA DE 24H
+    const generateTagId = () => {
+        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let result = '';
+        for (let i = 0; i < 12; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+    };
+
+    const createTag = async (postId, startTime = 0) => {
+        const db = window.firebaseDB;
+        if (!db) throw new Error("Firebase não disponível");
+        const tagId = generateTagId();
+        const now = Date.now();
+        const expiresAt = now + 24 * 60 * 60 * 1000;
+        const tagData = {
+            id: tagId,
+            videoId: postId,
+            senderId: user.id || user.uid || user.privateId,
+            senderName: user.name || user.nome || 'Usuário',
+            startTime: Math.floor(startTime),
+            createdAt: now,
+            expiresAt: expiresAt,
+            views: 0
+        };
+        await db.ref(`tags/${tagId}`).set(tagData);
+        return tagData;
+    };
+
+    const handleShare = async (post, startTime = 0) => {
+        try {
+            const tag = await createTag(post.id, startTime);
+            setGeneratedTag(tag);
+            setPostToShare(post);
+            setShareStartTime(startTime);
+            setShowShareModal(true);
+        } catch (e) {
+            showToast("Erro ao gerar link: " + e.message);
+        }
+    };
+
+    const getShareUrl = () => {
+        if (!generatedTag) return '';
+        return `${window.location.origin}${window.location.pathname}?tag=${generatedTag.id}`;
+    };
+
+    const handleCopyLink = () => {
+        const url = getShareUrl();
+        if (!url) return;
+        navigator.clipboard.writeText(url);
+        showToast("Link copiado!");
+    };
+
+    const handleShareToChat = async (chatId, type) => {
+        if (!postToShare || !generatedTag) return;
+        setSharingTo(prev => ({ ...prev, [chatId]: true }));
+        try {
+            const targetId = contacts.find(c => c.id === chatId)?.targetId || chatId;
+            const refPath = type === 'group' ? `groups/${chatId}/messages` : `chats/${[user.id, targetId].sort().join('_')}/messages`;
+            await window.firebaseDB.ref(refPath).push({
+                senderId: user.id,
+                senderName: user.name,
+                type: 'shared_video',
+                postUrl: getShareUrl(),
+                tagId: generatedTag.id,
+                mediaUrl: extractUrl(postToShare.mediaUrl),
+                postTitle: postToShare.content ? postToShare.content.substring(0, 50) : 'Vídeo',
+                startTime: shareStartTime,
+                timestamp: Date.now()
+            });
+            setSharedSuccess(prev => ({ ...prev, [chatId]: true }));
+        } catch (e) { showToast("Erro ao compartilhar."); }
+        finally { setSharingTo(prev => ({ ...prev, [chatId]: false })); }
+    };
+
+    const handleShareWhatsApp = () => {
+        const url = getShareUrl();
+        if (!url) return;
+        const text = `🎬 Confira este vídeo no Phantora: ${url}`;
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    const openVideoFromTag = (videoId, startTime = 0) => {
         const vPosts = posts.filter(p => {
             const raw = extractUrl(p.mediaUrl) || (p.mediaUrls && extractUrl(p.mediaUrls[0]));
             return isVideoUrl(raw);
         });
         const idx = vPosts.findIndex(p => p.id === videoId);
         if (idx !== -1) {
-            autoOpenedVideoRef.current = true;
             const list = vPosts.map(v => {
                 const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
-                return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id };
+                return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id, startAt: startTime };
             });
             setInfiniteFeed(list);
             setActiveVideoFeed(idx);
+        } else {
+            showToast("Vídeo não encontrado no feed atual.");
         }
-    }, [posts.length, idToken]);
+    };
 
-    // EXCLUIR POST + ARQUIVO DO CDN
     const handleDeletePost = async (postId) => {
         if (!window.confirm("Deseja realmente excluir esta publicação? O arquivo também será deletado do servidor.")) return;
         setDeletingPostId(postId);
@@ -167,7 +258,28 @@ function SocialNetwork({ user, onClose }) {
         }
     };
 
-    // CARREGAMENTO ULTRA-RÁPIDO
+    React.useEffect(() => {
+        if (autoOpenedVideoRef.current) return;
+        if (posts.length === 0) return;
+        const params = new URLSearchParams(window.location.search);
+        const videoId = params.get('v');
+        if (!videoId) return;
+        const vPosts = posts.filter(p => {
+            const raw = extractUrl(p.mediaUrl) || (p.mediaUrls && extractUrl(p.mediaUrls[0]));
+            return isVideoUrl(raw);
+        });
+        const idx = vPosts.findIndex(p => p.id === videoId);
+        if (idx !== -1) {
+            autoOpenedVideoRef.current = true;
+            const list = vPosts.map(v => {
+                const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
+                return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id };
+            });
+            setInfiniteFeed(list);
+            setActiveVideoFeed(idx);
+        }
+    }, [posts.length, idToken]);
+
     const POSTS_PER_PAGE = 30;
 
     React.useEffect(() => {
@@ -214,6 +326,33 @@ function SocialNetwork({ user, onClose }) {
             }
         }).catch(() => {});
 
+        const loadContacts = async () => {
+            try {
+                const chatsSnap = await db.ref(`users/${user.id}/chats`).once('value').catch(() => null);
+                if (chatsSnap && chatsSnap.exists()) {
+                    const chats = chatsSnap.val();
+                    const list = [];
+                    for (const chatId of Object.keys(chats)) {
+                        const c = chats[chatId];
+                        const targetId = c.targetId || chatId;
+                        const photoSnap = await db.ref(`users/${targetId}/profilePicture`).once('value').catch(() => null);
+                        const userSnap = await db.ref(`users/${targetId}`).once('value').catch(() => null);
+                        const avatar = photoSnap ? photoSnap.val() : null;
+                        const uData = userSnap && userSnap.exists() ? userSnap.val() : {};
+                        list.push({
+                            id: chatId,
+                            targetId: targetId,
+                            name: uData.name || 'Usuário',
+                            avatar: avatar || 'assets/default-avatar.svg',
+                            type: 'chat'
+                        });
+                    }
+                    setContacts(list);
+                }
+            } catch (e) {}
+        };
+        loadContacts();
+
         const loadInitialPosts = async () => {
             try {
                 const snap = await db.ref('posts').orderByKey().limitToLast(POSTS_PER_PAGE).once('value');
@@ -254,25 +393,6 @@ function SocialNetwork({ user, onClose }) {
                 let count = 0;
                 for (const fid in allFollows) if (allFollows[fid][user.id]) count++;
                 setFollowerStats({ count, lastUpdated: Date.now() });
-            }
-        }).catch(() => {});
-
-        // Sugestões em background
-        db.ref(`users/${user.id}`).once('value').then(userSnap => {
-            const uData = userSnap.exists() ? userSnap.val() : {};
-            const city = uData.city || user.city;
-            const state = uData.state || user.state;
-            if (city && state) {
-                db.ref(`location_users/${state}/${city}`).limitToLast(20).once('value').then(locSnap => {
-                    if (locSnap.exists()) {
-                        const userIds = Object.keys(locSnap.val()).filter(id => id && id.trim() !== '' && id !== user.id);
-                        Promise.all(userIds.map(id => db.ref(`users/${id}`).once('value').catch(() => null)))
-                            .then(snaps => {
-                                const list = snaps.filter(s => s && s.exists()).map(s => ({ id: s.key, ...s.val() }));
-                                setFriendSuggestions(list.sort(() => 0.5 - Math.random()).slice(0, 5));
-                            });
-                    }
-                }).catch(() => {});
             }
         }).catch(() => {});
 
@@ -365,31 +485,6 @@ function SocialNetwork({ user, onClose }) {
             showToast("Comentário adicionado!");
         } catch (e) { showToast("Erro ao comentar."); }
     };
-
-    const handleShare = (post) => { setPostToShare(post); setShowShareModal(true); };
-
-    const handleShareToChat = async (chatId, type) => {
-        if (!postToShare) return;
-        setSharingTo(prev => ({ ...prev, [chatId]: true }));
-        try {
-            const targetId = contacts.find(c => c.id === chatId)?.targetId || chatId;
-            const refPath = type === 'group' ? `groups/${chatId}/messages` : `chats/${[user.id, targetId].sort().join('_')}/messages`;
-            const shareUrl = `${window.location.origin}${window.location.pathname}?v=${postToShare.id}&from=${user.id}`;
-            await window.firebaseDB.ref(refPath).push({
-                senderId: user.id,
-                senderName: user.name,
-                type: 'shared_video',
-                postUrl: shareUrl,
-                mediaUrl: extractUrl(postToShare.mediaUrl),
-                postTitle: postToShare.content ? postToShare.content.substring(0, 50) : 'Vídeo',
-                timestamp: Date.now()
-            });
-            setSharedSuccess(prev => ({ ...prev, [chatId]: true }));
-        } catch (e) { showToast("Erro ao compartilhar."); }
-        finally { setSharingTo(prev => ({ ...prev, [chatId]: false })); }
-    };
-
-    const handleQuickShare = async () => { showToast("Compartilhamento rápido indisponível."); };
 
     const handleCameraCapture = async (file, type, audio, text) => {
         setIsUploading(true);
@@ -559,15 +654,7 @@ function SocialNetwork({ user, onClose }) {
                 )}
                 {isVisible && authedUrl && !hasError && (
                     <>
-                        <video
-                            ref={videoRef} src={authedUrl}
-                            playsInline muted={isMuted} loop preload="metadata"
-                            className="w-full max-h-[600px] object-contain pointer-events-none"
-                            onTimeUpdate={handleTimeUpdate}
-                            onPlay={() => { setIsPlaying(true); setShowOverlay(false); }}
-                            onPause={() => { setIsPlaying(false); setShowOverlay(true); }}
-                            onError={() => setHasError(true)}
-                        />
+                        <video ref={videoRef} src={authedUrl} playsInline muted={isMuted} loop preload="metadata" className="w-full max-h-[600px] object-contain pointer-events-none" onTimeUpdate={handleTimeUpdate} onPlay={() => { setIsPlaying(true); setShowOverlay(false); }} onPause={() => { setIsPlaying(false); setShowOverlay(true); }} onError={() => setHasError(true)} />
                         {showOverlay && (
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20">
@@ -611,13 +698,7 @@ function SocialNetwork({ user, onClose }) {
 
             <header className={`${headerBg} px-4 py-3 flex items-center justify-between sticky top-0 z-10 transition-colors`}>
                 <div className="flex items-center gap-3">
-                    <img 
-                        src={user.avatar || 'assets/default-avatar.svg'}
-                        onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
-                        alt="Avatar" 
-                        className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer hover:opacity-80 transition-opacity shrink-0"
-                        onClick={() => window.location.href = `canal.html?uid=${user.id}`}
-                    />
+                    <img src={user.avatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} alt="Avatar" className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer hover:opacity-80 transition-opacity shrink-0" onClick={() => window.location.href = `canal.html?uid=${user.id}`} />
                     <div className="flex flex-col justify-center">
                         <h1 className="text-lg font-bold text-primary hidden sm:block leading-none mb-1">Phantora</h1>
                         <div className="flex flex-col">
@@ -783,7 +864,6 @@ function SocialNetwork({ user, onClose }) {
                                                     </div>
                                                 </div>
                                             </div>
-
                                             {isOwner && (
                                                 <button onClick={() => handleDeletePost(post.id)} disabled={isDeleting} className={`p-2 rounded-full ${isDeleting ? 'opacity-50 cursor-wait' : 'text-text-secondary hover:text-danger hover:bg-danger/10'}`} title="Excluir post">
                                                     {isDeleting ? <div className="icon-loader animate-spin text-sm"></div> : <div className="icon-trash text-sm"></div>}
@@ -928,11 +1008,20 @@ function SocialNetwork({ user, onClose }) {
                     handleShare={handleShare}
                     quickShareUserId={quickShareUserId}
                     quickShareUserAvatar={quickShareUserAvatar}
-                    handleQuickShare={handleQuickShare}
-                    isQuickSharing={isQuickSharing}
-                    quickShareSuccess={quickShareSuccess}
+                    handleQuickShare={async () => showToast("Indisponível")}
+                    isQuickSharing={false}
+                    quickShareSuccess={false}
                     renderTextWithHashtags={renderTextWithHashtags}
                     getRelativeTime={getRelativeTime}
+                />
+            )}
+
+            {showTagViewer && currentTagId && window.TagViewer && (
+                <window.TagViewer
+                    tagId={currentTagId}
+                    currentUser={user}
+                    onClose={() => { setShowTagViewer(false); setCurrentTagId(null); window.history.replaceState({}, '', window.location.pathname); }}
+                    onOpenVideo={openVideoFromTag}
                 />
             )}
 
@@ -944,11 +1033,11 @@ function SocialNetwork({ user, onClose }) {
                             <button onClick={() => setShowShareModal(false)} className="text-gray-400 hover:text-gray-600"><div className="icon-x text-xl"></div></button>
                         </div>
                         <div className="p-4 flex gap-4 overflow-x-auto pb-4 border-b border-gray-100 dark:border-gray-700 scrollbar-hide">
-                            <button onClick={() => { const shareUrl = `${window.location.origin}${window.location.pathname}?v=${postToShare.id}`; navigator.clipboard.writeText(shareUrl); showToast("Link copiado!"); }} className="flex flex-col items-center gap-2 min-w-[70px]">
+                            <button onClick={handleCopyLink} className="flex flex-col items-center gap-2 min-w-[70px]">
                                 <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}><div className="icon-link"></div></div>
                                 <span className="text-xs font-medium text-center">Copiar Link</span>
                             </button>
-                            <button onClick={() => { const shareUrl = `${window.location.origin}${window.location.pathname}?v=${postToShare.id}`; const text = `Confira este vídeo no Phantora: ${shareUrl}`; window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`); }} className="flex flex-col items-center gap-2 min-w-[70px]">
+                            <button onClick={handleShareWhatsApp} className="flex flex-col items-center gap-2 min-w-[70px]">
                                 <div className="w-12 h-12 rounded-full bg-green-500 text-white flex items-center justify-center text-xl"><div className="icon-message-circle"></div></div>
                                 <span className="text-xs font-medium text-center">WhatsApp</span>
                             </button>
