@@ -13,14 +13,22 @@ function SocialNetwork({ user, onClose }) {
     const [searchQuery, setSearchQuery] = React.useState('');
     const [showShareModal, setShowShareModal] = React.useState(false);
     const [postToShare, setPostToShare] = React.useState(null);
+    const [contacts, setContacts] = React.useState([]);
+    const [sharingTo, setSharingTo] = React.useState({});
+    const [sharedSuccess, setSharedSuccess] = React.useState({});
     const [quickShareUserId, setQuickShareUserId] = React.useState(null);
     const [quickShareUserAvatar, setQuickShareUserAvatar] = React.useState(null);
+    const [isQuickSharing, setIsQuickSharing] = React.useState(false);
+    const [quickShareSuccess, setQuickShareSuccess] = React.useState(false);
+    const [showDiscovery, setShowDiscovery] = React.useState(false);
+    const [activeHashtag, setActiveHashtag] = React.useState(null);
     const [filterType, setFilterType] = React.useState('all');
     const [theme, setTheme] = React.useState(localStorage.getItem('social_theme') || 'light');
     const [toast, setToast] = React.useState(null);
     const [now, setNow] = React.useState(Date.now());
     const [following, setFollowing] = React.useState({});
     const [followerStats, setFollowerStats] = React.useState({ count: 0, lastUpdated: null });
+    const [pendingLink, setPendingLink] = React.useState(null);
     const [isUploading, setIsUploading] = React.useState(false);
     const [uploadStatus, setUploadStatus] = React.useState('');
     const [showCamera, setShowCamera] = React.useState(false);
@@ -28,6 +36,8 @@ function SocialNetwork({ user, onClose }) {
     const [showSettings, setShowSettings] = React.useState(false);
     const [idToken, setIdToken] = React.useState(null);
     const [deletingPostId, setDeletingPostId] = React.useState(null);
+    const [friendSuggestions, setFriendSuggestions] = React.useState([]);
+    const autoOpenedVideoRef = React.useRef(false);
 
     React.useEffect(() => {
         const interval = setInterval(() => setNow(Date.now()), 30000);
@@ -100,6 +110,30 @@ function SocialNetwork({ user, onClose }) {
         } catch (e) { return null; }
     };
 
+    // AUTO-ABRIR VIDEO FEED SE URL TIVER ?v=
+    React.useEffect(() => {
+        if (autoOpenedVideoRef.current) return;
+        if (posts.length === 0) return;
+        const params = new URLSearchParams(window.location.search);
+        const videoId = params.get('v');
+        if (!videoId) return;
+        const vPosts = posts.filter(p => {
+            const raw = extractUrl(p.mediaUrl) || (p.mediaUrls && extractUrl(p.mediaUrls[0]));
+            return isVideoUrl(raw);
+        });
+        const idx = vPosts.findIndex(p => p.id === videoId);
+        if (idx !== -1) {
+            autoOpenedVideoRef.current = true;
+            const list = vPosts.map(v => {
+                const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
+                return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id };
+            });
+            setInfiniteFeed(list);
+            setActiveVideoFeed(idx);
+        }
+    }, [posts.length, idToken]);
+
+    // EXCLUIR POST + ARQUIVO DO CDN
     const handleDeletePost = async (postId) => {
         if (!window.confirm("Deseja realmente excluir esta publicação? O arquivo também será deletado do servidor.")) return;
         setDeletingPostId(postId);
@@ -120,9 +154,7 @@ function SocialNetwork({ user, onClose }) {
             }
             for (const url of urlsToDelete) {
                 const filename = getFilenameFromUrl(url);
-                if (filename) {
-                    try { await window.api.deleteFromCDN(filename); } catch (e) {}
-                }
+                if (filename) { try { await window.api.deleteFromCDN(filename); } catch (e) {} }
             }
             await db.ref(`posts/${postId}`).remove();
             await db.ref(`users/${user.id}/user_posts/${postId}`).remove().catch(() => {});
@@ -135,11 +167,22 @@ function SocialNetwork({ user, onClose }) {
         }
     };
 
+    // CARREGAMENTO ULTRA-RÁPIDO
     const POSTS_PER_PAGE = 30;
 
     React.useEffect(() => {
         const db = window.firebaseDB;
         if (!db) return;
+
+        const params = new URLSearchParams(window.location.search);
+        const fromId = params.get('from');
+        if (fromId) {
+            db.ref(`users/${fromId}/profilePicture`).once('value').then(snap => {
+                setQuickShareUserId(fromId);
+                setQuickShareUserAvatar(snap.val() || null);
+            }).catch(() => setQuickShareUserId(fromId));
+        }
+
         const requestLocation = () => {
             if (navigator.geolocation && !localStorage.getItem('location_saved')) {
                 navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -162,18 +205,14 @@ function SocialNetwork({ user, onClose }) {
         requestLocation();
         window.requestUserLocation = () => { localStorage.removeItem('location_saved'); requestLocation(); };
 
-        const fetchStories = async () => {
-            try {
-                const snap = await db.ref('posts').orderByChild('type').equalTo('story').once('value');
-                if (snap.exists()) {
-                    const data = snap.val();
-                    const list = Object.keys(data).map(k => ({ id: k, ...data[k] }))
-                        .filter(p => Date.now() - p.timestamp < 24 * 60 * 60 * 1000);
-                    setStories(list);
-                }
-            } catch (e) {}
-        };
-        fetchStories();
+        db.ref('posts').orderByChild('type').equalTo('story').once('value').then(snap => {
+            if (snap.exists()) {
+                const data = snap.val();
+                const list = Object.keys(data).map(k => ({ id: k, ...data[k] }))
+                    .filter(p => Date.now() - p.timestamp < 24 * 60 * 60 * 1000);
+                setStories(list);
+            }
+        }).catch(() => {});
 
         const loadInitialPosts = async () => {
             try {
@@ -185,9 +224,19 @@ function SocialNetwork({ user, onClose }) {
                 const keys = Object.keys(data);
                 setLastPostKey(keys[0]);
                 if (keys.length < POSTS_PER_PAGE) setHasMorePosts(false);
-                const list = keys.map(k => ({ id: k, ...data[k] })).filter(p => p.type !== 'story');
-                setPosts(list.reverse());
+                const list = keys.map(k => ({
+                    id: k,
+                    ...data[k],
+                    authorName: null,
+                    authorAvatar: null,
+                    likesCount: data[k].likes ? Object.keys(data[k].likes).length : 0,
+                    hasLiked: data[k].likes ? !!data[k].likes[user.id] : false,
+                    commentsCount: data[k].comments ? Object.keys(data[k].comments).length : 0
+                })).filter(p => p.type !== 'story');
+                const reversed = list.reverse();
+                setPosts(reversed);
                 setIsLoadingPosts(false);
+                setTimeout(() => enrichPostsBackground(reversed), 50);
             } catch (e) {
                 setPosts([]); setHasMorePosts(false); setIsLoadingPosts(false);
             }
@@ -199,20 +248,65 @@ function SocialNetwork({ user, onClose }) {
             setFollowing(snap.val() || {});
         }, () => setFollowing({}));
 
-        const calculateFollowers = async () => {
-            try {
-                const snap = await db.ref('follows').once('value').catch(() => null);
-                if (snap && snap.exists()) {
-                    const allFollows = snap.val();
-                    let count = 0;
-                    for (const fid in allFollows) if (allFollows[fid][user.id]) count++;
-                    setFollowerStats({ count, lastUpdated: Date.now() });
-                }
-            } catch (e) {}
-        };
-        calculateFollowers();
+        db.ref('follows').once('value').then(snap => {
+            if (snap.exists()) {
+                const allFollows = snap.val();
+                let count = 0;
+                for (const fid in allFollows) if (allFollows[fid][user.id]) count++;
+                setFollowerStats({ count, lastUpdated: Date.now() });
+            }
+        }).catch(() => {});
+
+        // Sugestões em background
+        db.ref(`users/${user.id}`).once('value').then(userSnap => {
+            const uData = userSnap.exists() ? userSnap.val() : {};
+            const city = uData.city || user.city;
+            const state = uData.state || user.state;
+            if (city && state) {
+                db.ref(`location_users/${state}/${city}`).limitToLast(20).once('value').then(locSnap => {
+                    if (locSnap.exists()) {
+                        const userIds = Object.keys(locSnap.val()).filter(id => id && id.trim() !== '' && id !== user.id);
+                        Promise.all(userIds.map(id => db.ref(`users/${id}`).once('value').catch(() => null)))
+                            .then(snaps => {
+                                const list = snaps.filter(s => s && s.exists()).map(s => ({ id: s.key, ...s.val() }));
+                                setFriendSuggestions(list.sort(() => 0.5 - Math.random()).slice(0, 5));
+                            });
+                    }
+                }).catch(() => {});
+            }
+        }).catch(() => {});
+
         return () => { followsRef.off('value', followsListener); };
     }, [user.id]);
+
+    const enrichPostsBackground = async (postsList) => {
+        const db = window.firebaseDB;
+        if (!db) return;
+        if (!window._userCache) window._userCache = {};
+        const uids = [...new Set(postsList.map(p => p.authorId).filter(Boolean))];
+        const userDataMap = {};
+        await Promise.all(uids.map(async (uid) => {
+            if (window._userCache[uid]) { userDataMap[uid] = window._userCache[uid]; return; }
+            try {
+                const [photoSnap, userSnap] = await Promise.all([
+                    db.ref(`users/${uid}/profilePicture`).once('value').catch(() => null),
+                    db.ref(`users/${uid}`).once('value').catch(() => null)
+                ]);
+                const profilePicture = photoSnap ? photoSnap.val() : null;
+                const uData = userSnap && userSnap.exists() ? userSnap.val() : {};
+                const info = { name: uData.name || 'Usuário', avatar: profilePicture || 'assets/default-avatar.svg', isVerified: !!uData.isVerified };
+                window._userCache[uid] = info;
+                userDataMap[uid] = info;
+            } catch (e) {
+                userDataMap[uid] = { name: 'Usuário', avatar: 'assets/default-avatar.svg' };
+            }
+        }));
+        setPosts(prev => prev.map(p => {
+            if (!p.authorId || !userDataMap[p.authorId]) return p;
+            const info = userDataMap[p.authorId];
+            return { ...p, authorName: info.name, authorAvatar: info.avatar, isVerified: info.isVerified };
+        }));
+    };
 
     const loadMorePosts = async () => {
         if (!hasMorePosts || isLoadingMore || !lastPostKey) return;
@@ -225,8 +319,15 @@ function SocialNetwork({ user, onClose }) {
                 const keys = Object.keys(data);
                 if (keys.length === 0) { setHasMorePosts(false); return; }
                 setLastPostKey(keys[0]);
-                const newList = keys.map(k => ({ id: k, ...data[k] })).filter(p => p.type !== 'story');
-                setPosts(prev => [...prev, ...newList.reverse()]);
+                const newList = keys.map(k => ({
+                    id: k,
+                    ...data[k],
+                    likesCount: data[k].likes ? Object.keys(data[k].likes).length : 0,
+                    hasLiked: data[k].likes ? !!data[k].likes[user.id] : false,
+                    commentsCount: data[k].comments ? Object.keys(data[k].comments).length : 0
+                })).filter(p => p.type !== 'story').reverse();
+                setPosts(prev => [...prev, ...newList]);
+                enrichPostsBackground(newList);
                 if (keys.length < POSTS_PER_PAGE) setHasMorePosts(false);
             } else { setHasMorePosts(false); }
         } catch (e) {}
@@ -237,37 +338,6 @@ function SocialNetwork({ user, onClose }) {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
         if (scrollHeight - scrollTop <= clientHeight + 400) loadMorePosts();
     };
-
-    React.useEffect(() => {
-        if (posts.length === 0) return;
-        const db = window.firebaseDB;
-        if (!db) return;
-        if (!window._userCache) window._userCache = {};
-        const enrichPosts = async () => {
-            const enriched = await Promise.all(posts.map(async (post) => {
-                if (post.authorName && post.authorAvatar !== undefined) return post;
-                let uid = post.authorId;
-                if (!uid) return post;
-                if (window._userCache[uid]) {
-                    const c = window._userCache[uid];
-                    return { ...post, authorName: c.name, authorAvatar: c.avatar, isVerified: c.isVerified, likesCount: post.likesCount ?? (post.likes ? Object.keys(post.likes).length : 0), hasLiked: post.likes ? !!post.likes[user.id] : false, commentsCount: post.commentsCount ?? (post.comments ? Object.keys(post.comments).length : 0) };
-                }
-                try {
-                    const photoSnap = await db.ref(`users/${uid}/profilePicture`).once('value').catch(() => null);
-                    const profilePicture = photoSnap ? photoSnap.val() : null;
-                    const userSnap = await db.ref(`users/${uid}`).once('value').catch(() => null);
-                    const uData = userSnap && userSnap.exists() ? userSnap.val() : {};
-                    const info = { name: uData.name || 'Usuário', avatar: profilePicture || 'assets/default-avatar.svg', isVerified: !!uData.isVerified };
-                    window._userCache[uid] = info;
-                    return { ...post, authorName: info.name, authorAvatar: info.avatar, isVerified: info.isVerified, likesCount: post.likes ? Object.keys(post.likes).length : 0, hasLiked: post.likes ? !!post.likes[user.id] : false, commentsCount: post.comments ? Object.keys(post.comments).length : 0 };
-                } catch (e) {
-                    return { ...post, authorName: 'Usuário', authorAvatar: 'assets/default-avatar.svg' };
-                }
-            }));
-            setPosts(enriched);
-        };
-        enrichPosts();
-    }, [posts.length]);
 
     const handleLike = async (postId, hasLiked) => {
         const db = window.firebaseDB;
@@ -297,6 +367,29 @@ function SocialNetwork({ user, onClose }) {
     };
 
     const handleShare = (post) => { setPostToShare(post); setShowShareModal(true); };
+
+    const handleShareToChat = async (chatId, type) => {
+        if (!postToShare) return;
+        setSharingTo(prev => ({ ...prev, [chatId]: true }));
+        try {
+            const targetId = contacts.find(c => c.id === chatId)?.targetId || chatId;
+            const refPath = type === 'group' ? `groups/${chatId}/messages` : `chats/${[user.id, targetId].sort().join('_')}/messages`;
+            const shareUrl = `${window.location.origin}${window.location.pathname}?v=${postToShare.id}&from=${user.id}`;
+            await window.firebaseDB.ref(refPath).push({
+                senderId: user.id,
+                senderName: user.name,
+                type: 'shared_video',
+                postUrl: shareUrl,
+                mediaUrl: extractUrl(postToShare.mediaUrl),
+                postTitle: postToShare.content ? postToShare.content.substring(0, 50) : 'Vídeo',
+                timestamp: Date.now()
+            });
+            setSharedSuccess(prev => ({ ...prev, [chatId]: true }));
+        } catch (e) { showToast("Erro ao compartilhar."); }
+        finally { setSharingTo(prev => ({ ...prev, [chatId]: false })); }
+    };
+
+    const handleQuickShare = async () => { showToast("Compartilhamento rápido indisponível."); };
 
     const handleCameraCapture = async (file, type, audio, text) => {
         setIsUploading(true);
@@ -350,7 +443,10 @@ function SocialNetwork({ user, onClose }) {
         if (!text || typeof text !== 'string') return null;
         return text.split(/(\s+)/).map((word, i) => {
             if (word.startsWith('#') && word.length > 1) {
-                return <span key={i} className="text-purple-400 font-bold cursor-pointer hover:underline" onClick={() => { setSearchQuery(word); setFilterType('all'); }}>{word}</span>;
+                return <span key={i} className="text-purple-400 font-bold cursor-pointer hover:underline" onClick={() => { setActiveHashtag(word); setSearchQuery(word); setFilterType('all'); setActiveVideoFeed(null); }}>{word}</span>;
+            }
+            if (word.startsWith('@') && word.length > 1) {
+                return <span key={i} className="text-pink-400 font-bold cursor-pointer hover:underline">{word}</span>;
             }
             if (word.match(/^https?:\/\/[^\s]+$/i)) {
                 return <a key={i} href={word} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-blue-400 font-bold hover:underline break-all">{word}</a>;
@@ -362,8 +458,8 @@ function SocialNetwork({ user, onClose }) {
     const allItems = [...posts].sort((a, b) => b.timestamp - a.timestamp);
     const filteredPosts = allItems.filter(post => {
         const s = searchQuery.toLowerCase();
-        const matchesSearch = post.content?.toLowerCase().includes(s) || post.authorName?.toLowerCase().includes(s);
-        const matchesType = filterType === 'all' || post.type === filterType;
+        const matchesSearch = post.content?.toLowerCase().includes(s) || post.authorName?.toLowerCase().includes(s) || (post.hashtags && post.hashtags.some(h => h.toLowerCase().includes(s)));
+        const matchesType = filterType === 'all' || post.type === filterType || (filterType === 'image' && post.type === 'video');
         return matchesSearch && matchesType;
     });
 
@@ -373,13 +469,10 @@ function SocialNetwork({ user, onClose }) {
     });
 
     const isDark = theme === 'dark';
-    const cardBg = 'bg-secondary border border-border rounded-xl shadow-card';
+    const cardBg = 'bg-secondary border border-border rounded-xl shadow-card hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200';
     const textMuted = 'text-text-secondary';
     const headerBg = 'bg-secondary/80 backdrop-blur-lg border-b border-border';
 
-    // ==========================================================
-    // PLAYER PERSONALIZADO COM LAZY LOADING
-    // ==========================================================
     const InlineVideoPlayer = ({ post }) => {
         const videoRef = React.useRef(null);
         const containerRef = React.useRef(null);
@@ -396,12 +489,9 @@ function SocialNetwork({ user, onClose }) {
             if (!el) return;
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        setIsVisible(true);
-                        observer.disconnect();
-                    }
+                    if (entry.isIntersecting) { setIsVisible(true); observer.disconnect(); }
                 });
-            }, { rootMargin: '200px' });
+            }, { rootMargin: '300px' });
             observer.observe(el);
             return () => observer.disconnect();
         }, []);
@@ -412,14 +502,10 @@ function SocialNetwork({ user, onClose }) {
             const load = async () => {
                 const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
                 if (!rawUrl) return;
-                let finalUrl = rawUrl;
-                try {
-                    if (window.api && typeof window.api.getAuthedUrl === 'function') {
-                        finalUrl = await window.api.getAuthedUrl(rawUrl);
-                    } else {
-                        finalUrl = cdnUrl(rawUrl);
-                    }
-                } catch (e) { finalUrl = cdnUrl(rawUrl); }
+                let finalUrl = cdnUrl(rawUrl);
+                if (window.api && typeof window.api.getAuthedUrl === 'function') {
+                    try { finalUrl = await window.api.getAuthedUrl(rawUrl); } catch (e) {}
+                }
                 if (!cancelled) setAuthedUrl(finalUrl);
             };
             load();
@@ -474,12 +560,8 @@ function SocialNetwork({ user, onClose }) {
                 {isVisible && authedUrl && !hasError && (
                     <>
                         <video
-                            ref={videoRef}
-                            src={authedUrl}
-                            playsInline
-                            muted={isMuted}
-                            loop
-                            preload="metadata"
+                            ref={videoRef} src={authedUrl}
+                            playsInline muted={isMuted} loop preload="metadata"
                             className="w-full max-h-[600px] object-contain pointer-events-none"
                             onTimeUpdate={handleTimeUpdate}
                             onPlay={() => { setIsPlaying(true); setShowOverlay(false); }}
@@ -517,81 +599,61 @@ function SocialNetwork({ user, onClose }) {
     };
 
     return (
-        <div className="fixed inset-0 bg-primary text-primary font-sans z-50 flex flex-col" data-name="social-network" data-file="components/SocialNetwork.js">
+        <div className="fixed inset-0 bg-primary text-primary font-sans z-50 flex flex-col animate-fade-in transition-colors duration-300" data-name="social-network" data-file="components/SocialNetwork.js">
             {toast && (
-                <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[70] bg-black/90 text-white px-4 py-2 rounded-lg text-sm border border-white/10">
+                <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[70] bg-tertiary text-primary px-4 py-2 rounded-lg shadow-lg text-sm flex items-center gap-2 animate-fade-in-up border border-border">
+                    <div className="icon-info text-accent"></div>
                     {toast}
                 </div>
             )}
 
             {window.FriendRequestNotification && <window.FriendRequestNotification user={user} />}
 
-            <header className={`${headerBg} px-4 py-3 flex items-center justify-between sticky top-0 z-10`}>
+            <header className={`${headerBg} px-4 py-3 flex items-center justify-between sticky top-0 z-10 transition-colors`}>
                 <div className="flex items-center gap-3">
                     <img 
                         src={user.avatar || 'assets/default-avatar.svg'}
                         onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
-                        className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer"
+                        alt="Avatar" 
+                        className="w-10 h-10 rounded-full object-cover border-2 border-accent cursor-pointer hover:opacity-80 transition-opacity shrink-0"
                         onClick={() => window.location.href = `canal.html?uid=${user.id}`}
                     />
-                    <div className="flex flex-col">
-                        <h1 className="text-lg font-bold hidden sm:block">Phantora</h1>
-                        <span className="text-yellow-500 font-bold text-xs">{followerStats.count} {followerStats.count === 1 ? 'seguidor' : 'seguidores'}</span>
+                    <div className="flex flex-col justify-center">
+                        <h1 className="text-lg font-bold text-primary hidden sm:block leading-none mb-1">Phantora</h1>
+                        <div className="flex flex-col">
+                            <span className="text-yellow-500 font-bold text-xs leading-none">{followerStats.count} {followerStats.count === 1 ? 'seguidor' : 'seguidores'}</span>
+                            <span className="text-text-muted text-[10px] leading-none mt-1">atualizado agora</span>
+                        </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2">
-                    <button onClick={() => { if (window.requestUserLocation) window.requestUserLocation(); window.location.href = 'discover.html'; }} className="p-2 rounded-full text-text-secondary hover:bg-tertiary">
-                        <div className="icon-users text-xl"></div>
-                    </button>
-                    <button onClick={() => window.location.href = 'search.html'} className="p-2 hidden sm:block rounded-full text-text-secondary hover:bg-tertiary">
-                        <div className="icon-search text-xl"></div>
-                    </button>
-                    <button onClick={() => setShowSettings(true)} className="p-2 rounded-full text-text-secondary hover:bg-tertiary">
-                        <div className="icon-settings text-xl"></div>
-                    </button>
-                    <button onClick={onClose} className="p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-danger">
-                        <div className="icon-log-out text-xl"></div>
-                    </button>
+                    <button onClick={() => { if (window.requestUserLocation) window.requestUserLocation(); window.location.href = 'discover.html'; }} className="p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-accent transition-colors" title="Descobrir Pessoas"><div className="icon-users text-xl"></div></button>
+                    <button onClick={() => window.location.href = 'search.html'} className="p-2 hidden sm:block rounded-full text-text-secondary hover:bg-tertiary" title="Pesquisar"><div className="icon-search text-xl"></div></button>
+                    <button onClick={() => setShowSettings(true)} className="p-2 rounded-full text-text-secondary hover:bg-tertiary" title="Configurações"><div className="icon-settings text-xl"></div></button>
+                    <button onClick={onClose} className="p-2 rounded-full text-text-secondary hover:bg-tertiary hover:text-danger" title="Sair"><div className="icon-log-out text-xl"></div></button>
                 </div>
             </header>
 
-            <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center justify-between w-[90%] max-w-[400px] shadow-lg">
-                <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary'}`}>
-                    <div className="icon-house text-2xl"></div>
-                </button>
-                <button onClick={() => setDesktopView('chat')} className={`flex flex-col items-center ${desktopView === 'chat' ? 'text-accent' : 'text-text-secondary'}`}>
-                    <div className="icon-message-circle text-2xl"></div>
-                </button>
-                <button onClick={() => window.location.href = 'upload.html'} className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-blue-500 text-white shadow-lg -mt-6 border-4 border-primary">
-                    <div className="icon-plus text-2xl font-bold"></div>
-                </button>
+            <div className="md:hidden fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[40] bg-secondary/90 backdrop-blur-md border border-border rounded-full px-6 py-3 flex items-center justify-between w-[90%] max-w-[400px] shadow-lg">
+                <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'feed' ? 'text-accent' : 'text-text-secondary'}`}><div className="icon-house text-2xl"></div></button>
+                <button onClick={() => setDesktopView('chat')} className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${desktopView === 'chat' ? 'text-accent' : 'text-text-secondary'}`}><div className="icon-message-circle text-2xl"></div></button>
+                <button onClick={() => window.location.href = 'upload.html'} className="flex flex-col items-center justify-center w-12 h-12 rounded-full bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] -mt-6 border-4 border-primary"><div className="icon-plus text-2xl font-bold"></div></button>
                 <button onClick={() => {
                     if (videoPosts.length > 0) {
                         const list = videoPosts.map(v => {
                             const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
                             return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id };
                         });
-                        setInfiniteFeed(list);
-                        setActiveVideoFeed(0);
-                    } else showToast("Nenhum vídeo.");
-                }} className="flex flex-col items-center text-text-secondary">
-                    <div className="icon-circle-play text-2xl"></div>
-                </button>
-                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="flex flex-col items-center text-text-secondary">
-                    <div className="icon-user text-2xl"></div>
-                </button>
+                        setInfiniteFeed(list); setActiveVideoFeed(0);
+                    } else showToast("Nenhum vídeo disponível.");
+                }} className="flex flex-col items-center gap-1 text-text-secondary"><div className="icon-circle-play text-2xl"></div></button>
+                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="flex flex-col items-center gap-1 text-text-secondary"><div className="icon-user text-2xl"></div></button>
             </div>
 
             <div className="hidden md:flex flex-col fixed right-0 top-[60px] bottom-0 w-20 bg-secondary/90 backdrop-blur-lg border-l border-border z-[40] py-6 items-center gap-6 shadow-lg">
-                <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`p-3 rounded-xl ${desktopView === 'feed' ? 'bg-accent/20 text-accent' : 'text-text-secondary'}`}>
-                    <div className="icon-house text-2xl"></div>
-                </button>
-                <button onClick={() => setDesktopView('chat')} className={`p-3 rounded-xl ${desktopView === 'chat' ? 'bg-accent/20 text-accent' : 'text-text-secondary'}`}>
-                    <div className="icon-message-circle text-2xl"></div>
-                </button>
-                <button onClick={() => window.location.href = 'upload.html'} className="w-12 h-12 rounded-xl bg-blue-500 text-white flex items-center justify-center">
-                    <div className="icon-plus text-2xl font-bold"></div>
-                </button>
+                <button onClick={() => { setDesktopView('feed'); setActiveVideoFeed(null); window.scrollTo(0,0); }} className={`p-3 rounded-xl transition-all ${desktopView === 'feed' ? 'bg-accent/20 text-accent' : 'text-text-secondary'}`} title="Início"><div className="icon-house text-2xl"></div></button>
+                <button onClick={() => setDesktopView('chat')} className={`p-3 rounded-xl transition-all ${desktopView === 'chat' ? 'bg-accent/20 text-accent' : 'text-text-secondary'}`} title="Mensagens"><div className="icon-message-circle text-2xl"></div></button>
+                <button onClick={() => window.location.href = 'upload.html'} className="w-12 h-12 rounded-xl bg-blue-500 text-white flex items-center justify-center" title="Novo Post"><div className="icon-plus text-2xl font-bold"></div></button>
                 <button onClick={() => {
                     if (videoPosts.length > 0) {
                         setDesktopView('feed');
@@ -599,33 +661,24 @@ function SocialNetwork({ user, onClose }) {
                             const raw = extractUrl(v.mediaUrl) || (v.mediaUrls && extractUrl(v.mediaUrls[0]));
                             return { ...v, mediaUrl: cdnUrl(raw), uniqueKey: v.id };
                         });
-                        setInfiniteFeed(list);
-                        setActiveVideoFeed(0);
-                    } else showToast("Nenhum vídeo.");
-                }} className="p-3 rounded-xl text-text-secondary">
-                    <div className="icon-circle-play text-2xl"></div>
-                </button>
-                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="p-3 rounded-xl text-text-secondary">
-                    <div className="icon-user text-2xl"></div>
-                </button>
-                <button onClick={() => setShowSettings(true)} className="p-3 rounded-xl text-text-secondary">
-                    <div className="icon-settings text-2xl"></div>
-                </button>
+                        setInfiniteFeed(list); setActiveVideoFeed(0);
+                    } else showToast("Nenhum vídeo disponível.");
+                }} className="p-3 rounded-xl text-text-secondary" title="Vídeos"><div className="icon-circle-play text-2xl"></div></button>
+                <button onClick={() => window.location.href = `canal.html?uid=${user.id}`} className="p-3 rounded-xl text-text-secondary" title="Meu Canal"><div className="icon-user text-2xl"></div></button>
+                <button onClick={() => setShowSettings(true)} className="p-3 rounded-xl text-text-secondary" title="Configurações"><div className="icon-settings text-2xl"></div></button>
             </div>
 
-            {showSettings && typeof window.SettingsMenu !== 'undefined' && (
-                <window.SettingsMenu isOpen={true} onClose={() => setShowSettings(false)} />
-            )}
+            {showSettings && typeof window.SettingsMenu !== 'undefined' && <window.SettingsMenu isOpen={true} onClose={() => setShowSettings(false)} />}
 
             {stories.length > 0 && (
-                <div className="w-full max-w-2xl mx-auto p-4 pt-4 pb-0">
+                <div className="w-full max-w-2xl mx-auto p-4 md:px-6 pt-4 pb-0">
                     <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
                         {stories.map((story, i) => (
-                            <div key={story.id} onClick={() => setActiveStory(i)} className="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0">
+                            <div key={story.id} onClick={() => setActiveStory(i)} className="flex flex-col items-center gap-1 cursor-pointer group flex-shrink-0">
                                 <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-indigo-600">
                                     <img src={story.authorAvatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-full h-full rounded-full object-cover border-2" />
                                 </div>
-                                <span className="text-xs max-w-[64px] truncate text-text-primary">{(story.authorName || 'Usuário').split(' ')[0]}</span>
+                                <span className="text-xs font-medium max-w-[64px] truncate text-text-primary">{(story.authorName || 'Usuário').split(' ')[0]}</span>
                             </div>
                         ))}
                     </div>
@@ -633,15 +686,14 @@ function SocialNetwork({ user, onClose }) {
             )}
 
             {activeStory !== null && stories[activeStory] && (
-                <div className="fixed inset-0 z-[150] bg-black flex flex-col">
+                <div className="fixed inset-0 z-[150] bg-black flex flex-col animate-fade-in">
                     <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
                         <img src={stories[activeStory].authorAvatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-10 h-10 rounded-full border border-white" />
                         <span className="text-white font-bold">{stories[activeStory].authorName || 'Usuário'}</span>
+                        <span className="text-white/70 text-xs">{getRelativeTime(stories[activeStory].timestamp || Date.now())}</span>
                     </div>
-                    <button onClick={() => setActiveStory(null)} className="absolute top-4 right-4 z-10 text-white p-2">
-                        <div className="icon-x text-2xl"></div>
-                    </button>
-                    <div className="flex-1 flex items-center justify-center relative">
+                    <button onClick={() => setActiveStory(null)} className="absolute top-4 right-4 z-10 text-white p-2"><div className="icon-x text-2xl"></div></button>
+                    <div className="flex-1 flex items-center justify-center relative cursor-pointer">
                         <div className="absolute left-0 top-0 w-1/3 h-full z-10" onClick={() => setActiveStory(prev => prev > 0 ? prev - 1 : prev)}></div>
                         <div className="absolute right-0 top-0 w-1/3 h-full z-10" onClick={() => setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null)}></div>
                         {(() => {
@@ -651,6 +703,11 @@ function SocialNetwork({ user, onClose }) {
                                 ? <video src={url} autoPlay playsInline controls className="max-w-full max-h-full object-contain" onEnded={() => setActiveStory(prev => prev < stories.length - 1 ? prev + 1 : null)} />
                                 : <img src={url} className="max-w-full max-h-full object-contain" />;
                         })()}
+                        {stories[activeStory].content && (
+                            <div className="absolute bottom-20 left-0 w-full text-center p-4">
+                                <span className="bg-black/50 text-white px-4 py-2 rounded-xl text-lg font-bold backdrop-blur-sm inline-block">{stories[activeStory].content}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -658,21 +715,35 @@ function SocialNetwork({ user, onClose }) {
             <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 max-w-full md:max-w-4xl mx-auto w-full space-y-6" onScroll={desktopView === 'feed' ? handleScroll : undefined}>
                 {desktopView === 'chat' ? (
                     <div className="bg-secondary rounded-2xl border border-border h-[80vh] overflow-hidden shadow-lg mt-4">
-                        {window.ChatPage ? <window.ChatPage user={user} embedded={true} /> : <div className="text-center p-8 text-text-muted">Carregando...</div>}
+                        {window.ChatPage ? <window.ChatPage user={user} embedded={true} /> : <div className="text-center p-8 text-text-muted">Carregando mensagens...</div>}
                     </div>
                 ) : (
                     <>
                         <div className={`p-4 ${cardBg} mb-6 max-w-2xl mx-auto`}>
-                            <button onClick={() => window.location.href = 'upload.html'} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary">
+                            <button onClick={() => window.location.href = 'upload.html'} className="w-full flex items-center gap-3 pl-4 pr-4 py-3 rounded-lg border border-border bg-primary text-text-muted hover:border-border-active transition-colors">
                                 <div className="icon-plus text-accent text-lg"></div>
                                 <span className="font-semibold text-text-primary">Criar nova publicação...</span>
                             </button>
                         </div>
 
                         {isLoadingPosts ? (
-                            <div className="flex flex-col items-center justify-center py-16">
-                                <div className="icon-loader animate-spin text-accent text-4xl mb-4"></div>
-                                <p className="text-text-muted text-sm">Carregando feed...</p>
+                            <div className="space-y-4">
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} className={`${cardBg} animate-pulse`}>
+                                        <div className="p-4 flex items-center gap-3">
+                                            <div className="w-11 h-11 rounded-full bg-tertiary"></div>
+                                            <div className="flex-1">
+                                                <div className="h-4 bg-tertiary rounded w-32 mb-2"></div>
+                                                <div className="h-3 bg-tertiary rounded w-20"></div>
+                                            </div>
+                                        </div>
+                                        <div className="px-4 pb-4">
+                                            <div className="h-4 bg-tertiary rounded w-full mb-2"></div>
+                                            <div className="h-4 bg-tertiary rounded w-3/4"></div>
+                                        </div>
+                                        <div className="w-full h-64 bg-tertiary"></div>
+                                    </div>
+                                ))}
                             </div>
                         ) : filteredPosts.length === 0 ? (
                             <div className={`text-center mt-10 ${textMuted}`}>
@@ -687,33 +758,34 @@ function SocialNetwork({ user, onClose }) {
                                     <div key={post.id} id={`post-${post.id}`} className={cardBg}>
                                         <div className="p-4 flex justify-between items-start">
                                             <div className="flex items-center gap-3">
-                                                <img 
-                                                    src={post.authorAvatar || 'assets/default-avatar.svg'} 
-                                                    onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }}
-                                                    className="w-11 h-11 rounded-full object-cover border border-border cursor-pointer" 
-                                                    onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}
-                                                />
+                                                <div className="cursor-pointer" onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}>
+                                                    {post.authorAvatar ? (
+                                                        <img src={post.authorAvatar} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} alt="Avatar" className="w-11 h-11 rounded-full object-cover border border-border shadow-sm" />
+                                                    ) : (
+                                                        <div className="w-11 h-11 rounded-full bg-tertiary flex items-center justify-center text-primary font-bold border border-border shadow-sm">
+                                                            {(post.authorName || '?').charAt(0).toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                </div>
                                                 <div>
                                                     <div className="flex items-center gap-2">
-                                                        <h3 className="font-bold text-base hover:text-accent cursor-pointer" onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}>
-                                                            {post.authorName || 'Usuário'}
+                                                        <h3 className="font-bold text-base hover:text-accent cursor-pointer transition-colors" onClick={() => window.location.href = `channel.html?uid=${post.authorId}`}>
+                                                            {post.authorName || 'Carregando...'}
                                                         </h3>
-                                                        {post.authorId !== user.id && (
-                                                            <button onClick={() => toggleFollow(post.authorId)} className={`text-xs px-2 py-0.5 rounded-md border font-semibold ${following[post.authorId] ? 'border-border text-text-secondary' : 'border-accent text-accent hover:bg-accent hover:text-white'}`}>
+                                                        {post.authorId !== user.id && post.authorName && (
+                                                            <button onClick={(e) => { e.stopPropagation(); toggleFollow(post.authorId); }} className={`text-xs px-2 py-0.5 rounded-md border font-semibold transition-colors ${following[post.authorId] ? 'border-border text-text-secondary' : 'border-accent text-accent hover:bg-accent hover:text-white'}`}>
                                                                 {following[post.authorId] ? 'Seguindo' : 'Seguir'}
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <div className={`text-sm ${textMuted}`}>{getRelativeTime(post.timestamp)}</div>
+                                                    <div className={`flex items-center gap-2 text-sm ${textMuted}`}>
+                                                        <span>{getRelativeTime(post.timestamp)}</span>
+                                                    </div>
                                                 </div>
                                             </div>
+
                                             {isOwner && (
-                                                <button 
-                                                    onClick={() => handleDeletePost(post.id)}
-                                                    disabled={isDeleting}
-                                                    className={`p-2 rounded-full ${isDeleting ? 'opacity-50 cursor-wait' : 'text-text-secondary hover:text-danger hover:bg-danger/10'}`}
-                                                    title="Excluir post"
-                                                >
+                                                <button onClick={() => handleDeletePost(post.id)} disabled={isDeleting} className={`p-2 rounded-full ${isDeleting ? 'opacity-50 cursor-wait' : 'text-text-secondary hover:text-danger hover:bg-danger/10'}`} title="Excluir post">
                                                     {isDeleting ? <div className="icon-loader animate-spin text-sm"></div> : <div className="icon-trash text-sm"></div>}
                                                 </button>
                                             )}
@@ -777,52 +849,56 @@ function SocialNetwork({ user, onClose }) {
                                             if (isVideoUrl(rawUrl)) return <InlineVideoPlayer post={post} />;
 
                                             return (
-                                                <img 
-                                                    src={url} 
-                                                    onError={(e) => { e.target.style.display = 'none'; }} 
-                                                    alt="Post" 
-                                                    className="w-full max-h-[500px] object-contain bg-primary border-t border-b border-border" 
-                                                    loading="lazy" 
-                                                    decoding="async"
-                                                />
+                                                <img src={url} onError={(e) => { e.target.style.display = 'none'; }} alt="Post" className="w-full max-h-[500px] object-contain bg-primary border-t border-b border-border" loading="lazy" decoding="async" />
                                             );
                                         })()}
 
                                         <div className={`px-4 py-3 border-t flex items-center justify-between border-border ${textMuted}`}>
                                             <div className="flex items-center gap-6">
-                                                <button onClick={() => handleLike(post.id, post.hasLiked)} className={`flex items-center gap-2 ${post.hasLiked ? 'text-danger' : 'hover:text-danger'}`}>
+                                                <button onClick={() => handleLike(post.id, post.hasLiked)} className={`flex items-center gap-2 transition-colors ${post.hasLiked ? 'text-danger' : 'hover:text-danger'}`}>
                                                     <div className={`icon-heart text-xl ${post.hasLiked ? 'fill-current' : ''}`}></div>
                                                     <span className="text-sm font-semibold">{post.likesCount || 0}</span>
                                                 </button>
-                                                <button onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)} className="flex items-center gap-2 hover:text-accent">
+                                                <button onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)} className="flex items-center gap-2 hover:text-accent transition-colors">
                                                     <div className="icon-message-circle text-xl"></div>
                                                     <span className="text-sm font-semibold">{post.commentsCount || 0}</span>
                                                 </button>
                                             </div>
-                                            <button onClick={() => handleShare(post)} className="hover:text-accent">
-                                                <div className="icon-share-2 text-xl"></div>
-                                            </button>
+                                            <button onClick={() => handleShare(post)} className="hover:text-accent transition-colors"><div className="icon-share-2 text-xl"></div></button>
                                         </div>
 
                                         {activeCommentPost === post.id && (
-                                            <div className="p-4 border-t bg-tertiary/30 border-border">
+                                            <div className={`p-4 border-t bg-tertiary/30 border-border`}>
                                                 <div className="flex gap-2 mb-4">
-                                                    <input type="text" value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder="Comentar..." className="flex-1 rounded-lg px-4 py-2 text-sm bg-primary border border-border text-primary" onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post.id)} />
-                                                    <button onClick={() => handleAddComment(post.id)} disabled={!commentText.trim()} className="bg-accent text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50">Enviar</button>
+                                                    <input type="text" value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder="Escreva um comentário..." className="flex-1 rounded-lg px-4 py-2 text-sm outline-none border focus:border-accent bg-primary border-border text-primary transition-all" onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post.id)} />
+                                                    <button onClick={() => handleAddComment(post.id)} disabled={!commentText.trim()} className="bg-accent text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 hover:bg-accent-hover transition-colors active:scale-95">Enviar</button>
                                                 </div>
-                                                {post.comments && Object.keys(post.comments).map(cId => {
-                                                    const c = post.comments[cId];
-                                                    return (
-                                                        <div key={cId} className="flex gap-3 mb-3">
-                                                            <img src={c.authorAvatar || 'assets/default-avatar.svg'} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-8 h-8 rounded-full object-cover border border-border" />
-                                                            <div className="flex-1 px-4 py-3 rounded-2xl bg-secondary border border-border">
-                                                                <span className="font-bold block text-sm text-primary">{c.authorName || 'Usuário'}</span>
-                                                                <span className="text-text-primary text-sm">{c.text}</span>
-                                                                <span className="block text-[11px] mt-2 text-text-secondary">{getRelativeTime(c.timestamp)}</span>
+                                                <div className="space-y-4 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                                                    {post.comments && Object.keys(post.comments).map(cId => {
+                                                        const comment = post.comments[cId];
+                                                        return (
+                                                            <div key={cId} className="flex gap-3 group">
+                                                                {comment.authorAvatar ? (
+                                                                    <img src={comment.authorAvatar} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-8 h-8 rounded-full object-cover shadow-sm border border-border" />
+                                                                ) : (
+                                                                    <div className="w-8 h-8 rounded-full bg-tertiary flex items-center justify-center text-xs font-bold text-primary shrink-0 border border-border">
+                                                                        {(comment.authorName || '?').charAt(0)}
+                                                                    </div>
+                                                                )}
+                                                                <div className={`px-4 py-3 rounded-2xl rounded-tl-sm text-sm flex-1 bg-secondary border border-border shadow-sm`}>
+                                                                    <div className="flex justify-between items-start mb-1">
+                                                                        <span className="font-bold block text-sm text-primary">{comment.authorName || 'Usuário'}</span>
+                                                                    </div>
+                                                                    <span className="text-text-primary leading-relaxed">{comment.text}</span>
+                                                                    <span className={`block text-[11px] mt-2 text-text-secondary`}>{getRelativeTime(comment.timestamp)}</span>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    );
-                                                })}
+                                                        );
+                                                    })}
+                                                    {(!post.comments || Object.keys(post.comments).length === 0) && (
+                                                        <p className={`text-center text-sm py-4 text-text-muted`}>Seja o primeiro a comentar.</p>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -831,9 +907,7 @@ function SocialNetwork({ user, onClose }) {
                         )}
 
                         {isLoadingMore && (
-                            <div className="flex justify-center py-4">
-                                <div className="icon-loader animate-spin text-accent text-3xl"></div>
-                            </div>
+                            <div className="flex justify-center py-4"><div className="icon-loader animate-spin text-accent text-3xl"></div></div>
                         )}
                         {!hasMorePosts && posts.length > 0 && (
                             <div className="text-center py-4 text-text-muted text-sm">Você chegou ao fim do feed.</div>
@@ -846,7 +920,7 @@ function SocialNetwork({ user, onClose }) {
                 <window.VideoFeed
                     initialVideos={infiniteFeed}
                     initialActiveIndex={activeVideoFeed}
-                    onClose={() => { setActiveVideoFeed(null); window.history.replaceState({}, '', window.location.pathname); }}
+                    onClose={() => { setActiveVideoFeed(null); autoOpenedVideoRef.current = false; window.history.replaceState({}, '', window.location.pathname); }}
                     user={user}
                     following={following}
                     toggleFollow={toggleFollow}
@@ -854,35 +928,78 @@ function SocialNetwork({ user, onClose }) {
                     handleShare={handleShare}
                     quickShareUserId={quickShareUserId}
                     quickShareUserAvatar={quickShareUserAvatar}
-                    handleQuickShare={async () => showToast("Indisponível")}
-                    isQuickSharing={false}
-                    quickShareSuccess={false}
+                    handleQuickShare={handleQuickShare}
+                    isQuickSharing={isQuickSharing}
+                    quickShareSuccess={quickShareSuccess}
                     renderTextWithHashtags={renderTextWithHashtags}
                     getRelativeTime={getRelativeTime}
                 />
             )}
 
             {showShareModal && postToShare && (
-                <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4">
-                    <div className={`${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-sm rounded-2xl shadow-xl overflow-hidden`}>
-                        <div className="p-4 border-b flex justify-between items-center">
-                            <h3 className="font-bold">Compartilhar</h3>
-                            <button onClick={() => setShowShareModal(false)} className="text-gray-400"><div className="icon-x text-xl"></div></button>
+                <div className="fixed inset-0 z-[120] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in-up">
+                    <div className={`${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'} w-full max-w-sm rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[80vh] flex flex-col`}>
+                        <div className={`p-4 border-b flex justify-between items-center ${isDark ? 'border-gray-700' : 'border-gray-100'}`}>
+                            <h3 className="font-bold text-lg">Compartilhar com...</h3>
+                            <button onClick={() => setShowShareModal(false)} className="text-gray-400 hover:text-gray-600"><div className="icon-x text-xl"></div></button>
                         </div>
-                        <div className="p-4">
-                            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?v=${postToShare.id}`); showToast("Link copiado!"); }} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold">
-                                Copiar Link
+                        <div className="p-4 flex gap-4 overflow-x-auto pb-4 border-b border-gray-100 dark:border-gray-700 scrollbar-hide">
+                            <button onClick={() => { const shareUrl = `${window.location.origin}${window.location.pathname}?v=${postToShare.id}`; navigator.clipboard.writeText(shareUrl); showToast("Link copiado!"); }} className="flex flex-col items-center gap-2 min-w-[70px]">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}><div className="icon-link"></div></div>
+                                <span className="text-xs font-medium text-center">Copiar Link</span>
                             </button>
+                            <button onClick={() => { const shareUrl = `${window.location.origin}${window.location.pathname}?v=${postToShare.id}`; const text = `Confira este vídeo no Phantora: ${shareUrl}`; window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`); }} className="flex flex-col items-center gap-2 min-w-[70px]">
+                                <div className="w-12 h-12 rounded-full bg-green-500 text-white flex items-center justify-center text-xl"><div className="icon-message-circle"></div></div>
+                                <span className="text-xs font-medium text-center">WhatsApp</span>
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2">
+                            <h4 className={`px-2 py-2 text-xs font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Seus Contatos</h4>
+                            {contacts.length === 0 ? (
+                                <div className="text-center py-8 text-gray-500 text-sm">Nenhum contato encontrado.</div>
+                            ) : (
+                                contacts.map(c => (
+                                    <div key={c.id} className={`flex items-center justify-between p-3 rounded-xl transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
+                                        <div className="flex items-center gap-3">
+                                            {c.avatar ? (
+                                                <img src={c.avatar} onError={(e) => { e.target.src = 'assets/default-avatar.svg'; }} className="w-10 h-10 rounded-full object-cover" />
+                                            ) : (
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${c.type === 'group' ? 'bg-green-100 text-green-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                                                    {c.name.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span className="font-bold text-sm truncate max-w-[150px]">{c.name}</span>
+                                        </div>
+                                        <button onClick={() => handleShareToChat(c.id, c.type)} disabled={sharingTo[c.id] || sharedSuccess[c.id]} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${sharedSuccess[c.id] ? 'bg-green-500 text-white' : sharingTo[c.id] ? 'bg-gray-300 text-gray-500' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                            {sharingTo[c.id] ? <div className="icon-loader animate-spin text-sm"></div> : sharedSuccess[c.id] ? <div className="icon-check text-sm"></div> : 'Enviar'}
+                                        </button>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>
             )}
 
+            {pendingLink && (
+                <div className="fixed inset-0 z-[300] bg-black/80 flex items-center justify-center p-4 animate-fade-in-up">
+                    <div className="bg-gray-800 rounded-2xl p-6 max-w-sm w-full text-center border border-gray-700">
+                        <div className="w-16 h-16 bg-indigo-600/20 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-500"><div className="icon-external-link text-3xl"></div></div>
+                        <h3 className="text-xl font-bold text-white mb-2">Sair do Phantora?</h3>
+                        <p className="text-gray-300 text-sm mb-6">Você tem certeza que deseja entrar nesse link?</p>
+                        <p className="text-xs text-gray-500 mb-6 break-all bg-gray-900 p-2 rounded">{pendingLink.url}</p>
+                        <div className="flex gap-3">
+                            <button onClick={() => setPendingLink(null)} className="flex-1 py-3 bg-gray-700 text-white rounded-xl font-bold hover:bg-gray-600">Cancelar</button>
+                            <button onClick={() => { window.open(pendingLink.url, '_blank'); setPendingLink(null); }} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">Sim, entrar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showDiscovery && window.FriendSwipe && <window.FriendSwipe user={user} onClose={() => setShowDiscovery(false)} />}
+
             {showCamera && window.MediaCapture && (
-                <window.MediaCapture 
-                    onCapture={handleCameraCapture} 
-                    onClose={() => setShowCamera(false)} 
-                />
+                <window.MediaCapture onCapture={handleCameraCapture} onClose={() => setShowCamera(false)} />
             )}
         </div>
     );
