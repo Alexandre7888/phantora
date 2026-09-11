@@ -1,9 +1,10 @@
 function SocialNetwork({ user, onClose }) {
     const [posts, setPosts] = React.useState([]);
-    const [stories, setStories] = React.useState([]);
-    const [lastPostKey, setLastPostKey] = React.useState(null);
-    const [hasMorePosts, setHasMorePosts] = React.useState(true);
+    const [isLoadingPosts, setIsLoadingPosts] = React.useState(true);
     const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+    const [hasMorePosts, setHasMorePosts] = React.useState(true);
+    const [lastPostKey, setLastPostKey] = React.useState(null);
+    const [stories, setStories] = React.useState([]);
     const [activeStory, setActiveStory] = React.useState(null);
     const [activeCommentPost, setActiveCommentPost] = React.useState(null);
     const [commentText, setCommentText] = React.useState('');
@@ -51,7 +52,7 @@ function SocialNetwork({ user, onClose }) {
                     setIdToken(token);
                     window._currentToken = token;
                 }
-            } catch (e) { console.error("Erro token:", e); }
+            } catch (e) {}
         };
         fetchToken();
         const interval = setInterval(fetchToken, 30 * 60 * 1000);
@@ -90,47 +91,24 @@ function SocialNetwork({ user, onClose }) {
         return false;
     };
 
-    // ==========================================================
-    // EXTRAI O NOME DO ARQUIVO DE UMA URL DO CDN
-    // ==========================================================
     const getFilenameFromUrl = (url) => {
         if (!url || typeof url !== 'string') return null;
         try {
-            // Remove query string
             const cleanUrl = url.split('?')[0];
-            // Pega o último segmento após /
             const parts = cleanUrl.split('/');
-            const filename = parts[parts.length - 1];
-            return filename || null;
-        } catch (e) {
-            return null;
-        }
+            return parts[parts.length - 1] || null;
+        } catch (e) { return null; }
     };
 
-    // ==========================================================
-    // EXCLUIR POST (Firebase + CDN)
-    // ==========================================================
     const handleDeletePost = async (postId) => {
-        if (!window.confirm("Deseja realmente excluir esta publicação? O arquivo também será deletado do servidor.")) {
-            return;
-        }
-
+        if (!window.confirm("Deseja realmente excluir esta publicação? O arquivo também será deletado do servidor.")) return;
         setDeletingPostId(postId);
         const db = window.firebaseDB;
         if (!db) { setDeletingPostId(null); return; }
-
         try {
-            // 1. Busca os dados do post pra saber o que deletar
             const postSnap = await db.ref(`posts/${postId}`).once('value');
             const post = postSnap.val();
-
-            if (!post) {
-                showToast("Post não encontrado.");
-                setDeletingPostId(null);
-                return;
-            }
-
-            // 2. Coleta todas as URLs de mídia
+            if (!post) { showToast("Post não encontrado."); setDeletingPostId(null); return; }
             const urlsToDelete = [];
             const mediaUrl = extractUrl(post.mediaUrl);
             if (mediaUrl) urlsToDelete.push(mediaUrl);
@@ -140,55 +118,28 @@ function SocialNetwork({ user, onClose }) {
                     if (url) urlsToDelete.push(url);
                 });
             }
-
-            // 3. Deleta cada arquivo do CDN
             for (const url of urlsToDelete) {
                 const filename = getFilenameFromUrl(url);
                 if (filename) {
-                    try {
-                        console.log("🗑️ Deletando do CDN:", filename);
-                        await window.api.deleteFromCDN(filename);
-                    } catch (e) {
-                        console.warn("Erro ao deletar arquivo do CDN:", e);
-                    }
+                    try { await window.api.deleteFromCDN(filename); } catch (e) {}
                 }
             }
-
-            // 4. Deleta do Firebase: posts
             await db.ref(`posts/${postId}`).remove();
-
-            // 5. Deleta dos user_posts do usuário
             await db.ref(`users/${user.id}/user_posts/${postId}`).remove().catch(() => {});
-
-            // 6. Remove da lista local
             setPosts(prev => prev.filter(p => p.id !== postId));
-
             showToast("Post excluído com sucesso!");
-
         } catch (error) {
-            console.error("Erro ao excluir post:", error);
             showToast("Erro ao excluir: " + error.message);
         } finally {
             setDeletingPostId(null);
         }
     };
 
-    // ==========================================================
-    // CARREGAR POSTS
-    // ==========================================================
+    const POSTS_PER_PAGE = 30;
+
     React.useEffect(() => {
         const db = window.firebaseDB;
         if (!db) return;
-
-        const params = new URLSearchParams(window.location.search);
-        const fromId = params.get('from');
-        if (fromId) {
-            db.ref(`users/${fromId}/profilePicture`).once('value').then(snap => {
-                setQuickShareUserId(fromId);
-                setQuickShareUserAvatar(snap.val() || null);
-            }).catch(() => setQuickShareUserId(fromId));
-        }
-
         const requestLocation = () => {
             if (navigator.geolocation && !localStorage.getItem('location_saved')) {
                 navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -224,72 +175,29 @@ function SocialNetwork({ user, onClose }) {
         };
         fetchStories();
 
-        const fetchUserData = async (uid) => {
-            if (!uid) return { name: 'Usuário', avatar: 'assets/default-avatar.svg' };
-            if (window._userCache && window._userCache[uid]) return window._userCache[uid];
-            try {
-                const photoSnap = await db.ref(`users/${uid}/profilePicture`).once('value').catch(() => null);
-                const profilePicture = photoSnap ? photoSnap.val() : null;
-                const userSnap = await db.ref(`users/${uid}`).once('value').catch(() => null);
-                const uData = userSnap && userSnap.exists() ? userSnap.val() : {};
-                const result = { name: uData.name || 'Usuário', avatar: profilePicture || 'assets/default-avatar.svg', isVerified: !!uData.isVerified };
-                if (!window._userCache) window._userCache = {};
-                window._userCache[uid] = result;
-                return result;
-            } catch(e) { return { name: 'Usuário', avatar: 'assets/default-avatar.svg' }; }
-        };
-
-        const processPostsWithUsers = async (data) => {
-            const keys = Object.keys(data);
-            const postsList = [];
-            for (const key of keys) {
-                const p = data[key];
-                if (p.type === 'story') continue;
-                const uData = await fetchUserData(p.authorId);
-                let processedComments = {};
-                if (p.comments) {
-                    for (const cId of Object.keys(p.comments)) {
-                        const c = p.comments[cId];
-                        const cUData = await fetchUserData(c.authorId);
-                        processedComments[cId] = { ...c, authorName: cUData.name, authorAvatar: cUData.avatar };
-                    }
-                }
-                postsList.push({
-                    id: key, ...p,
-                    authorName: uData.name,
-                    authorAvatar: uData.avatar,
-                    isVerified: uData.isVerified,
-                    comments: processedComments,
-                    likesCount: p.likes ? Object.keys(p.likes).length : 0,
-                    hasLiked: p.likes ? !!p.likes[user.id] : false,
-                    commentsCount: p.comments ? Object.keys(p.comments).length : 0,
-                });
-            }
-            return postsList;
-        };
-
         const loadInitialPosts = async () => {
             try {
-                const snap = await db.ref('posts').orderByKey().limitToLast(30).once('value');
-                if (snap.exists()) {
-                    const data = snap.val();
-                    const keys = Object.keys(data);
-                    setLastPostKey(keys[0]);
-                    if (keys.length < 30) setHasMorePosts(false);
-                    const postsList = await processPostsWithUsers(data);
-                    setPosts(postsList.reverse());
-                } else { setPosts([]); setHasMorePosts(false); }
-            } catch (e) { setPosts([]); setHasMorePosts(false); }
+                const snap = await db.ref('posts').orderByKey().limitToLast(POSTS_PER_PAGE).once('value');
+                if (!snap.exists()) {
+                    setPosts([]); setHasMorePosts(false); setIsLoadingPosts(false); return;
+                }
+                const data = snap.val();
+                const keys = Object.keys(data);
+                setLastPostKey(keys[0]);
+                if (keys.length < POSTS_PER_PAGE) setHasMorePosts(false);
+                const list = keys.map(k => ({ id: k, ...data[k] })).filter(p => p.type !== 'story');
+                setPosts(list.reverse());
+                setIsLoadingPosts(false);
+            } catch (e) {
+                setPosts([]); setHasMorePosts(false); setIsLoadingPosts(false);
+            }
         };
         loadInitialPosts();
 
         const followsRef = db.ref(`follows/${user.id}`);
         const followsListener = followsRef.on('value', (snap) => {
             setFollowing(snap.val() || {});
-        }, (error) => {
-            console.warn("Sem permissão /follows:", error.message);
-            setFollowing({});
-        });
+        }, () => setFollowing({}));
 
         const calculateFollowers = async () => {
             try {
@@ -303,17 +211,68 @@ function SocialNetwork({ user, onClose }) {
             } catch (e) {}
         };
         calculateFollowers();
-
         return () => { followsRef.off('value', followsListener); };
     }, [user.id]);
+
+    const loadMorePosts = async () => {
+        if (!hasMorePosts || isLoadingMore || !lastPostKey) return;
+        setIsLoadingMore(true);
+        try {
+            const db = window.firebaseDB;
+            const snap = await db.ref('posts').orderByKey().endBefore(lastPostKey).limitToLast(POSTS_PER_PAGE).once('value');
+            if (snap.exists()) {
+                const data = snap.val();
+                const keys = Object.keys(data);
+                if (keys.length === 0) { setHasMorePosts(false); return; }
+                setLastPostKey(keys[0]);
+                const newList = keys.map(k => ({ id: k, ...data[k] })).filter(p => p.type !== 'story');
+                setPosts(prev => [...prev, ...newList.reverse()]);
+                if (keys.length < POSTS_PER_PAGE) setHasMorePosts(false);
+            } else { setHasMorePosts(false); }
+        } catch (e) {}
+        finally { setIsLoadingMore(false); }
+    };
+
+    const handleScroll = (e) => {
+        const { scrollTop, clientHeight, scrollHeight } = e.target;
+        if (scrollHeight - scrollTop <= clientHeight + 400) loadMorePosts();
+    };
+
+    React.useEffect(() => {
+        if (posts.length === 0) return;
+        const db = window.firebaseDB;
+        if (!db) return;
+        if (!window._userCache) window._userCache = {};
+        const enrichPosts = async () => {
+            const enriched = await Promise.all(posts.map(async (post) => {
+                if (post.authorName && post.authorAvatar !== undefined) return post;
+                let uid = post.authorId;
+                if (!uid) return post;
+                if (window._userCache[uid]) {
+                    const c = window._userCache[uid];
+                    return { ...post, authorName: c.name, authorAvatar: c.avatar, isVerified: c.isVerified, likesCount: post.likesCount ?? (post.likes ? Object.keys(post.likes).length : 0), hasLiked: post.likes ? !!post.likes[user.id] : false, commentsCount: post.commentsCount ?? (post.comments ? Object.keys(post.comments).length : 0) };
+                }
+                try {
+                    const photoSnap = await db.ref(`users/${uid}/profilePicture`).once('value').catch(() => null);
+                    const profilePicture = photoSnap ? photoSnap.val() : null;
+                    const userSnap = await db.ref(`users/${uid}`).once('value').catch(() => null);
+                    const uData = userSnap && userSnap.exists() ? userSnap.val() : {};
+                    const info = { name: uData.name || 'Usuário', avatar: profilePicture || 'assets/default-avatar.svg', isVerified: !!uData.isVerified };
+                    window._userCache[uid] = info;
+                    return { ...post, authorName: info.name, authorAvatar: info.avatar, isVerified: info.isVerified, likesCount: post.likes ? Object.keys(post.likes).length : 0, hasLiked: post.likes ? !!post.likes[user.id] : false, commentsCount: post.comments ? Object.keys(post.comments).length : 0 };
+                } catch (e) {
+                    return { ...post, authorName: 'Usuário', authorAvatar: 'assets/default-avatar.svg' };
+                }
+            }));
+            setPosts(enriched);
+        };
+        enrichPosts();
+    }, [posts.length]);
 
     const handleLike = async (postId, hasLiked) => {
         const db = window.firebaseDB;
         if (!db) return;
-        setPosts(prev => prev.map(p => {
-            if (p.id === postId) return { ...p, hasLiked: !hasLiked, likesCount: !hasLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1) };
-            return p;
-        }));
+        setPosts(prev => prev.map(p => p.id === postId ? { ...p, hasLiked: !hasLiked, likesCount: !hasLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1) } : p));
         try {
             const likeRef = db.ref(`posts/${postId}/likes/${user.id}`);
             if (hasLiked) await likeRef.remove();
@@ -356,35 +315,6 @@ function SocialNetwork({ user, onClose }) {
             showToast("Erro: " + err.message);
             setIsUploading(false);
         }
-    };
-
-    const loadMorePosts = async () => {
-        if (!hasMorePosts || isLoadingMore || !lastPostKey) return;
-        setIsLoadingMore(true);
-        try {
-            const db = window.firebaseDB;
-            const snap = await db.ref('posts').orderByKey().endBefore(lastPostKey).limitToLast(30).once('value');
-            if (snap.exists()) {
-                const data = snap.val();
-                const keys = Object.keys(data);
-                if (keys.length === 0) { setHasMorePosts(false); return; }
-                setLastPostKey(keys[0]);
-                const newPostsList = keys.map(k => ({
-                    id: k, ...data[k],
-                    likesCount: data[k].likes ? Object.keys(data[k].likes).length : 0,
-                    hasLiked: data[k].likes ? !!data[k].likes[user.id] : false,
-                    commentsCount: data[k].comments ? Object.keys(data[k].comments).length : 0,
-                })).filter(p => p.type !== 'story');
-                setPosts(prev => [...prev, ...newPostsList.reverse()]);
-                if (keys.length < 30) setHasMorePosts(false);
-            } else setHasMorePosts(false);
-        } catch (e) {}
-        finally { setIsLoadingMore(false); }
-    };
-
-    const handleScroll = (e) => {
-        const { scrollTop, clientHeight, scrollHeight } = e.target;
-        if (scrollHeight - scrollTop <= clientHeight + 300) loadMorePosts();
     };
 
     const toggleFollow = async (targetId) => {
@@ -448,18 +378,36 @@ function SocialNetwork({ user, onClose }) {
     const headerBg = 'bg-secondary/80 backdrop-blur-lg border-b border-border';
 
     // ==========================================================
-    // PLAYER PERSONALIZADO INLINE
+    // PLAYER PERSONALIZADO COM LAZY LOADING
     // ==========================================================
     const InlineVideoPlayer = ({ post }) => {
         const videoRef = React.useRef(null);
+        const containerRef = React.useRef(null);
         const [isPlaying, setIsPlaying] = React.useState(false);
         const [isMuted, setIsMuted] = React.useState(true);
         const [progress, setProgress] = React.useState(0);
         const [showOverlay, setShowOverlay] = React.useState(true);
         const [authedUrl, setAuthedUrl] = React.useState('');
         const [hasError, setHasError] = React.useState(false);
+        const [isVisible, setIsVisible] = React.useState(false);
 
         React.useEffect(() => {
+            const el = containerRef.current;
+            if (!el) return;
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        setIsVisible(true);
+                        observer.disconnect();
+                    }
+                });
+            }, { rootMargin: '200px' });
+            observer.observe(el);
+            return () => observer.disconnect();
+        }, []);
+
+        React.useEffect(() => {
+            if (!isVisible) return;
             let cancelled = false;
             const load = async () => {
                 const rawUrl = extractUrl(post.mediaUrl) || (post.mediaUrls && extractUrl(post.mediaUrls[0]));
@@ -476,7 +424,7 @@ function SocialNetwork({ user, onClose }) {
             };
             load();
             return () => { cancelled = true; };
-        }, [post.id]);
+        }, [post.id, isVisible]);
 
         const togglePlay = (e) => {
             e.stopPropagation();
@@ -511,56 +459,59 @@ function SocialNetwork({ user, onClose }) {
             setActiveVideoFeed(idx !== -1 ? idx : 0);
         };
 
-        if (!authedUrl) {
-            return (
-                <div className="w-full bg-black flex items-center justify-center h-64">
-                    <div className="icon-loader animate-spin text-white text-3xl"></div>
-                </div>
-            );
-        }
-
-        if (hasError) {
-            return (
-                <div className="w-full bg-black flex items-center justify-center h-64 flex-col gap-2">
-                    <div className="icon-alert-circle text-red-400 text-4xl"></div>
-                    <span className="text-white/60 text-sm">Erro ao carregar vídeo</span>
-                </div>
-            );
-        }
-
         return (
-            <div className="relative w-full bg-black" onClick={handleOpenFeed}>
-                <video
-                    ref={videoRef}
-                    src={authedUrl}
-                    playsInline
-                    muted={isMuted}
-                    loop
-                    preload="metadata"
-                    className="w-full max-h-[600px] object-contain pointer-events-none"
-                    onTimeUpdate={handleTimeUpdate}
-                    onPlay={() => { setIsPlaying(true); setShowOverlay(false); }}
-                    onPause={() => { setIsPlaying(false); setShowOverlay(true); }}
-                    onError={() => setHasError(true)}
-                />
-                {showOverlay && !hasError && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20">
-                            <div className="icon-play text-white text-4xl ml-1"></div>
-                        </div>
+            <div ref={containerRef} className="relative w-full bg-black" onClick={handleOpenFeed}>
+                {!isVisible && (
+                    <div className="w-full h-64 flex items-center justify-center bg-black/40">
+                        <div className="text-white/40 text-sm">Carregando vídeo...</div>
                     </div>
                 )}
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-                    <div className="h-full bg-white transition-all" style={{ width: `${progress}%` }}></div>
-                </div>
-                <div className="absolute bottom-3 right-3 flex gap-2">
-                    <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20">
-                        <div className={`text-white text-xl ${isPlaying ? 'icon-pause' : 'icon-play'}`}></div>
-                    </button>
-                    <button onClick={toggleMute} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20">
-                        <div className={`text-white text-xl ${isMuted ? 'icon-volume-x' : 'icon-volume-2'}`}></div>
-                    </button>
-                </div>
+                {isVisible && !authedUrl && (
+                    <div className="w-full h-64 flex items-center justify-center bg-black">
+                        <div className="icon-loader animate-spin text-white text-3xl"></div>
+                    </div>
+                )}
+                {isVisible && authedUrl && !hasError && (
+                    <>
+                        <video
+                            ref={videoRef}
+                            src={authedUrl}
+                            playsInline
+                            muted={isMuted}
+                            loop
+                            preload="metadata"
+                            className="w-full max-h-[600px] object-contain pointer-events-none"
+                            onTimeUpdate={handleTimeUpdate}
+                            onPlay={() => { setIsPlaying(true); setShowOverlay(false); }}
+                            onPause={() => { setIsPlaying(false); setShowOverlay(true); }}
+                            onError={() => setHasError(true)}
+                        />
+                        {showOverlay && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20">
+                                    <div className="icon-play text-white text-4xl ml-1"></div>
+                                </div>
+                            </div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                            <div className="h-full bg-white transition-all" style={{ width: `${progress}%` }}></div>
+                        </div>
+                        <div className="absolute bottom-3 right-3 flex gap-2">
+                            <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20">
+                                <div className={`text-white text-xl ${isPlaying ? 'icon-pause' : 'icon-play'}`}></div>
+                            </button>
+                            <button onClick={toggleMute} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center border border-white/20">
+                                <div className={`text-white text-xl ${isMuted ? 'icon-volume-x' : 'icon-volume-2'}`}></div>
+                            </button>
+                        </div>
+                    </>
+                )}
+                {hasError && (
+                    <div className="w-full h-64 flex items-center justify-center bg-black flex-col gap-2">
+                        <div className="icon-alert-circle text-red-400 text-4xl"></div>
+                        <span className="text-white/60 text-sm">Erro ao carregar vídeo</span>
+                    </div>
+                )}
             </div>
         );
     };
@@ -718,7 +669,12 @@ function SocialNetwork({ user, onClose }) {
                             </button>
                         </div>
 
-                        {filteredPosts.length === 0 ? (
+                        {isLoadingPosts ? (
+                            <div className="flex flex-col items-center justify-center py-16">
+                                <div className="icon-loader animate-spin text-accent text-4xl mb-4"></div>
+                                <p className="text-text-muted text-sm">Carregando feed...</p>
+                            </div>
+                        ) : filteredPosts.length === 0 ? (
                             <div className={`text-center mt-10 ${textMuted}`}>
                                 <div className="icon-image text-4xl mb-3 opacity-50 mx-auto"></div>
                                 <p>Nenhuma publicação encontrada.</p>
@@ -751,20 +707,14 @@ function SocialNetwork({ user, onClose }) {
                                                     <div className={`text-sm ${textMuted}`}>{getRelativeTime(post.timestamp)}</div>
                                                 </div>
                                             </div>
-
-                                            {/* ⬇️ BOTÃO DE EXCLUIR (só para o dono do post) */}
                                             {isOwner && (
                                                 <button 
                                                     onClick={() => handleDeletePost(post.id)}
                                                     disabled={isDeleting}
-                                                    className={`p-2 rounded-full transition-colors ${isDeleting ? 'opacity-50 cursor-wait' : 'text-text-secondary hover:text-danger hover:bg-danger/10'}`}
+                                                    className={`p-2 rounded-full ${isDeleting ? 'opacity-50 cursor-wait' : 'text-text-secondary hover:text-danger hover:bg-danger/10'}`}
                                                     title="Excluir post"
                                                 >
-                                                    {isDeleting ? (
-                                                        <div className="icon-loader animate-spin text-sm"></div>
-                                                    ) : (
-                                                        <div className="icon-trash text-sm"></div>
-                                                    )}
+                                                    {isDeleting ? <div className="icon-loader animate-spin text-sm"></div> : <div className="icon-trash text-sm"></div>}
                                                 </button>
                                             )}
                                         </div>
@@ -778,9 +728,7 @@ function SocialNetwork({ user, onClose }) {
 
                                         {(() => {
                                             if (post.type === 'poll') {
-                                                if (window.PollViewer) {
-                                                    return <window.PollViewer key={`poll-${post.id}`} post={post} user={user} />;
-                                                }
+                                                if (window.PollViewer) return <window.PollViewer key={`poll-${post.id}`} post={post} user={user} />;
                                                 return (
                                                     <div className="p-4 border-t border-b border-border bg-tertiary/30">
                                                         <div className="font-bold text-lg mb-3 text-primary">{post.question || 'Enquete'}</div>
@@ -807,7 +755,7 @@ function SocialNetwork({ user, onClose }) {
                                                                     </div>
                                                                 );
                                                             }
-                                                            return <img key={idx} src={url} onError={(e) => { e.target.style.display = 'none'; }} className="w-full shrink-0 snap-center max-h-[500px] object-contain bg-black" loading="lazy" />;
+                                                            return <img key={idx} src={url} onError={(e) => { e.target.style.display = 'none'; }} className="w-full shrink-0 snap-center max-h-[500px] object-contain bg-black" loading="lazy" decoding="async" />;
                                                         })}
                                                     </div>
                                                 );
@@ -826,9 +774,7 @@ function SocialNetwork({ user, onClose }) {
                                                 );
                                             }
 
-                                            if (isVideoUrl(rawUrl)) {
-                                                return <InlineVideoPlayer post={post} />;
-                                            }
+                                            if (isVideoUrl(rawUrl)) return <InlineVideoPlayer post={post} />;
 
                                             return (
                                                 <img 
@@ -837,6 +783,7 @@ function SocialNetwork({ user, onClose }) {
                                                     alt="Post" 
                                                     className="w-full max-h-[500px] object-contain bg-primary border-t border-b border-border" 
                                                     loading="lazy" 
+                                                    decoding="async"
                                                 />
                                             );
                                         })()}
@@ -845,11 +792,11 @@ function SocialNetwork({ user, onClose }) {
                                             <div className="flex items-center gap-6">
                                                 <button onClick={() => handleLike(post.id, post.hasLiked)} className={`flex items-center gap-2 ${post.hasLiked ? 'text-danger' : 'hover:text-danger'}`}>
                                                     <div className={`icon-heart text-xl ${post.hasLiked ? 'fill-current' : ''}`}></div>
-                                                    <span className="text-sm font-semibold">{post.likesCount}</span>
+                                                    <span className="text-sm font-semibold">{post.likesCount || 0}</span>
                                                 </button>
                                                 <button onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)} className="flex items-center gap-2 hover:text-accent">
                                                     <div className="icon-message-circle text-xl"></div>
-                                                    <span className="text-sm font-semibold">{post.commentsCount}</span>
+                                                    <span className="text-sm font-semibold">{post.commentsCount || 0}</span>
                                                 </button>
                                             </div>
                                             <button onClick={() => handleShare(post)} className="hover:text-accent">
