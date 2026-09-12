@@ -1,4 +1,3 @@
-```javascript
 const CACHE_NAME = 'phantora-offline-v1';
 
 // Nunca colocar no cache
@@ -383,4 +382,3 @@ setInterval(async () => {
   }
 
 }, 60 * 1000);
-```
